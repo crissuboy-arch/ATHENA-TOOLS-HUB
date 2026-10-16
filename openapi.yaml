@@ -1,0 +1,461 @@
+openapi: 3.1.0
+info:
+  title: Athena Tools Hub — API v1 (contrato Athena)
+  version: 0.1.0
+  description: |
+    Contrato machine-to-machine entre a ATHENA Control e o Tools Hub.
+    Autenticação: `Authorization: Bearer <api key>` + anti-replay
+    (`X-Request-Timestamp`, `X-Nonce`), ou sessão de usuário Supabase.
+    Erros seguem sempre `{ error: { code, message, requestId } }`.
+servers:
+  - url: https://tools-hub.exemplo.com/api/v1
+    description: Produção (placeholder — sem deploy autorizado no MVP)
+  - url: http://localhost:3000/api/v1
+    description: Desenvolvimento local
+
+security:
+  - apiKey: []
+  - session: []
+
+components:
+  securitySchemes:
+    apiKey:
+      type: http
+      scheme: bearer
+      bearerFormat: hub_live_...
+      description: |
+        Chave de API por integração (armazenada apenas como hash SHA-256).
+        Exige também os headers anti-replay:
+        - X-Request-Timestamp: unix seconds (±5 min)
+        - X-Nonce: uuid único por requisição
+    session:
+      type: apiKey
+      in: cookie
+      name: sb-<ref>-auth-token
+      description: Sessão de usuário via Supabase Auth (cookies).
+
+  parameters:
+    OrgId:
+      name: orgId
+      in: query
+      required: true
+      schema: { type: string, format: uuid }
+      description: Organização em escopo (obrigatório p/ sessão; p/ API key deve ser a org da chave).
+    Page:
+      name: page
+      in: query
+      schema: { type: integer, minimum: 1, default: 1 }
+    PerPage:
+      name: perPage
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+
+  headers:
+    RequestId:
+      description: Correlação com logs server-side.
+      schema: { type: string, format: uuid }
+    RateLimitLimit:
+      description: Limite da janela (120 req / 60s por identidade).
+      schema: { type: integer }
+    RateLimitRemaining:
+      schema: { type: integer }
+    RateLimitReset:
+      description: Epoch (s) do reset da janela.
+      schema: { type: integer }
+
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message, requestId]
+          properties:
+            code:
+              type: string
+              enum: [SUPABASE_NOT_CONFIGURED, UNAUTHORIZED, FORBIDDEN, NOT_FOUND,
+                     VALIDATION, INVALID_TRANSITION, CONFLICT, NOT_IMPLEMENTED,
+                     RATE_LIMITED, REPLAY_DETECTED, INTERNAL]
+            message: { type: string }
+            requestId: { type: string, format: uuid }
+            detail: { description: "Detalhes legíveis por máquina (ex.: erros zod). Nunca contém segredos." }
+
+    JobStatus:
+      type: string
+      enum: [CREATED, VALIDATING, PENDING_APPROVAL, QUEUED, RUNNING, COMPLETED, FAILED, CANCELLED]
+
+    IntegrationStatus:
+      type: string
+      enum: [pending, ready]
+      description: "'ready' somente quando um executor REAL está conectado à tool. 'pending' = estado honesto, sem execução simulada."
+
+    Job:
+      type: object
+      required: [id, orgId, toolId, status, params, idempotencyKey, createdBy, createdAt, updatedAt, integrationStatus]
+      properties:
+        id: { type: string, format: uuid }
+        orgId: { type: string, format: uuid }
+        toolId: { type: string, example: vectorcraft }
+        status: { $ref: '#/components/schemas/JobStatus' }
+        params: { type: object, additionalProperties: true }
+        idempotencyKey: { type: string, format: uuid }
+        createdBy: { type: string }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        errorMessage: { type: string, nullable: true }
+        result: { description: Resultado final (quando COMPLETED). }
+        integrationStatus: { $ref: '#/components/schemas/IntegrationStatus' }
+
+    JobEvent:
+      type: object
+      required: [id, type, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        type: { type: string, example: status_transition }
+        fromStatus: { $ref: '#/components/schemas/JobStatus', nullable: true }
+        toStatus: { $ref: '#/components/schemas/JobStatus', nullable: true }
+        payload: { type: object, additionalProperties: true, nullable: true }
+        actorId: { type: string }
+        actorType: { type: string, enum: [user, api_key] }
+        createdAt: { type: string, format: date-time }
+
+    JobAsset:
+      type: object
+      required: [id, kind, url, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        kind: { type: string, example: output_image }
+        url: { type: string, format: uri }
+        metadata: { type: object, additionalProperties: true, nullable: true }
+        createdAt: { type: string, format: date-time }
+
+    Tool:
+      type: object
+      required: [id, name, version, status, capabilities, integrationStatus]
+      properties:
+        id: { type: string, example: vectorcraft }
+        name: { type: string }
+        description: { type: string, nullable: true }
+        version: { type: string, example: 0.1.0-contract }
+        status: { type: string, example: in-development }
+        capabilities: { type: array, items: { type: string } }
+        integrationStatus: { $ref: '#/components/schemas/IntegrationStatus' }
+        dryRun:
+          type: object
+          properties:
+            requiresApproval: { type: boolean }
+            estimatedCost: { type: string }
+
+    PaginatedJobs:
+      type: object
+      required: [items, page, perPage, total]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/Job' } }
+        page: { type: integer }
+        perPage: { type: integer }
+        total: { type: integer }
+
+    CreateJobRequest:
+      type: object
+      required: [orgId, toolId, params]
+      properties:
+        orgId: { type: string, format: uuid }
+        toolId: { type: string, example: vectorcraft }
+        params:
+          type: object
+          additionalProperties: true
+          example: { prompt: "logo minimalista de cafeteria", width: 1024, height: 1024 }
+        idempotencyKey:
+          type: string
+          format: uuid
+          description: Obrigatório no body ou via header Idempotency-Key.
+
+    CreateJobResponse:
+      type: object
+      required: [job, deduplicated]
+      properties:
+        job: { $ref: '#/components/schemas/Job' }
+        deduplicated:
+          type: boolean
+          description: true quando a chave de idempotência já existia (job original retornado).
+
+    DecisionRequest:
+      type: object
+      required: [orgId, decision, justification]
+      properties:
+        orgId: { type: string, format: uuid }
+        decision: { type: string, enum: [approve, reject] }
+        justification:
+          type: string
+          minLength: 1
+          maxLength: 2000
+          example: Aprovado — briefing confere com o roteiro.
+
+  responses:
+    Unauthorized:
+      description: Não autenticado
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+          example:
+            error:
+              code: UNAUTHORIZED
+              message: "Autenticação necessária: Bearer <api key> ou sessão válida."
+              requestId: 3f9a2c1e-5b4d-4a8f-9c2e-7d1b3f5a9c0e
+    BadRequest:
+      description: Validação falhou
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    NotFound:
+      description: Não encontrado
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Conflict:
+      description: Transição inválida / conflito
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+          example:
+            error:
+              code: INVALID_TRANSITION
+              message: 'Transição de estado inválida: COMPLETED → CANCELLED.'
+              requestId: 3f9a2c1e-5b4d-4a8f-9c2e-7d1b3f5a9c0e
+    NotConfigured:
+      description: Supabase não configurado — degradação honesta
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+          example:
+            error:
+              code: SUPABASE_NOT_CONFIGURED
+              message: Supabase não configurado. Defina as variáveis de ambiente do Supabase para habilitar este recurso.
+              requestId: 3f9a2c1e-5b4d-4a8f-9c2e-7d1b3f5a9c0e
+
+paths:
+  /health:
+    get:
+      summary: Saúde do serviço (sem auth)
+      security: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: ok }
+                  version: { type: string, example: 0.1.0 }
+                  supabase: { type: string, enum: [configured, not-configured] }
+                  timestamp: { type: string, format: date-time }
+
+  /tools:
+    get:
+      summary: Lista o catálogo de tools
+      description: Requer scope tools:read. Sem Supabase configurado → 503 honesto (sem fallback inventado).
+      responses:
+        '200':
+          description: Catálogo
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tools: { type: array, items: { $ref: '#/components/schemas/Tool' } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '503': { $ref: '#/components/responses/NotConfigured' }
+
+  /tools/{id}:
+    get:
+      summary: Detalhe de uma tool
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Tool
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tool: { $ref: '#/components/schemas/Tool' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /jobs:
+    get:
+      summary: Lista jobs da org (paginado, filtrável)
+      parameters:
+        - $ref: '#/components/parameters/OrgId'
+        - name: status
+          in: query
+          schema: { $ref: '#/components/schemas/JobStatus' }
+        - name: toolId
+          in: query
+          schema: { type: string }
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
+      responses:
+        '200':
+          description: Página de jobs
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PaginatedJobs' }
+    post:
+      summary: Cria um job (idempotente)
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: false
+          schema: { type: string, format: uuid }
+          description: Alternativa a idempotencyKey no body.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateJobRequest' }
+      responses:
+        '201':
+          description: Job criado
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CreateJobResponse' }
+        '200':
+          description: "Replay idempotente (deduplicated: true)"
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CreateJobResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+
+  /jobs/{id}:
+    get:
+      summary: Detalhe do job
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - $ref: '#/components/parameters/OrgId'
+      responses:
+        '200':
+          description: Job
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  job: { $ref: '#/components/schemas/Job' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /jobs/{id}/events:
+    get:
+      summary: Linha do tempo de execução do job
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - $ref: '#/components/parameters/OrgId'
+      responses:
+        '200':
+          description: Eventos
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  events: { type: array, items: { $ref: '#/components/schemas/JobEvent' } }
+
+  /jobs/{id}/assets:
+    get:
+      summary: Assets produzidos pelo job
+      description: Vazio honesto enquanto nada foi produzido — nunca inventado.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - $ref: '#/components/parameters/OrgId'
+      responses:
+        '200':
+          description: Assets
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  assets: { type: array, items: { $ref: '#/components/schemas/JobAsset' } }
+
+  /jobs/{id}/cancel:
+    post:
+      summary: Cancela um job não-terminal
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [orgId]
+              properties:
+                orgId: { type: string, format: uuid }
+                reason: { type: string, maxLength: 500 }
+      responses:
+        '200':
+          description: Job cancelado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  job: { $ref: '#/components/schemas/Job' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /approvals:
+    get:
+      summary: Fila de aprovações pendentes (scope approvals:decide)
+      parameters:
+        - $ref: '#/components/parameters/OrgId'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
+      responses:
+        '200':
+          description: Jobs em PENDING_APPROVAL
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PaginatedJobs' }
+
+  /approvals/{id}/decision:
+    post:
+      summary: Decide sobre um job pendente (approve → QUEUED, reject → CANCELLED)
+      description: Sessão de usuário exige papel owner/admin. O aprovador é registrado em auditoria.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DecisionRequest' }
+      responses:
+        '200':
+          description: Decisão aplicada
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  job: { $ref: '#/components/schemas/Job' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
