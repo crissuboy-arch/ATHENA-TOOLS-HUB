@@ -27,7 +27,8 @@ export function SearchInput({
   className = "",
   ...rest
 }: SearchInputProps) {
-  const inputId = id ?? React.useId();
+  const generatedId = React.useId();
+    const inputId = id ?? generatedId;
   return (
     <form
       role="search"

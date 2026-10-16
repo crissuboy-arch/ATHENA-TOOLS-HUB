@@ -66,3 +66,51 @@ describe("job state machine", () => {
     expect(isJobStatus(null)).toBe(false);
   });
 });
+
+describe("job state machine (exaustivo)", () => {
+  it("canTransition é consistente com nextStates para todos os pares", () => {
+    for (const from of allStates) {
+      for (const to of allStates) {
+        expect(canTransition(from, to)).toBe(nextStates(from).includes(to));
+      }
+    }
+  });
+
+  it("nenhum estado transita para si mesmo", () => {
+    for (const s of allStates) {
+      expect(canTransition(s, s)).toBe(false);
+    }
+  });
+
+  it("cancellableStates = exatamente os estados com saída para CANCELLED", () => {
+    for (const s of allStates) {
+      expect(cancellableStates.includes(s)).toBe(nextStates(s).includes("CANCELLED"));
+    }
+    expect(cancellableStates).toHaveLength(5);
+  });
+
+  it("terminalStates = exatamente os estados sem saída", () => {
+    for (const s of allStates) {
+      expect(terminalStates.includes(s)).toBe(nextStates(s).length === 0);
+      expect(isTerminal(s)).toBe(terminalStates.includes(s));
+    }
+    expect(terminalStates).toHaveLength(3);
+  });
+
+  it("estados terminais não são cancellable", () => {
+    for (const s of terminalStates) {
+      expect(cancellableStates.includes(s)).toBe(false);
+    }
+  });
+
+  it("não há caminho de COMPLETED para re-execução", () => {
+    expect(canTransition("COMPLETED", "RUNNING")).toBe(false);
+    expect(canTransition("COMPLETED", "QUEUED")).toBe(false);
+    expect(canTransition("FAILED", "RUNNING")).toBe(false);
+  });
+
+  it("aprovação nunca é pulada de volta (PENDING_APPROVAL não volta a VALIDATING)", () => {
+    expect(canTransition("PENDING_APPROVAL", "VALIDATING")).toBe(false);
+    expect(canTransition("PENDING_APPROVAL", "FAILED")).toBe(false);
+  });
+});

@@ -24,7 +24,8 @@ export function Modal({
   footer,
   labelledBy,
 }: ModalProps) {
-  const titleId = labelledBy ?? React.useId();
+  const generatedTitleId = React.useId();
+  const titleId = labelledBy ?? generatedTitleId;
   const dialogRef = React.useRef<HTMLDivElement>(null);
   const openerRef = React.useRef<HTMLElement | null>(null);
 

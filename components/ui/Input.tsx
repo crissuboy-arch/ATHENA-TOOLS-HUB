@@ -12,7 +12,8 @@ const inputClass =
 
 export const Input = React.forwardRef<HTMLInputElement, InputProps>(
   function Input({ label, error, hint, id, className = "", ...rest }, ref) {
-    const inputId = id ?? React.useId();
+    const generatedId = React.useId();
+    const inputId = id ?? generatedId;
     const errorId = `${inputId}-error`;
     const hintId = `${inputId}-hint`;
     return (

@@ -124,14 +124,12 @@ function Section({
   href,
   loading,
   error,
-  emptyTitle,
   children,
 }: {
   title: string;
   href: string;
   loading: boolean;
   error: boolean;
-  emptyTitle: string;
   children: React.ReactNode;
 }) {
   return (
@@ -286,7 +284,6 @@ export default function DashboardPage() {
           href="/jobs"
           loading={jobs.loading}
           error={jobs.error}
-          emptyTitle={t.dashboard.emptyJobs}
         >
           {jobs.items.length === 0 ? (
             <EmptyState icon={<EmptyIcon />} title={t.dashboard.emptyJobs} />
@@ -304,7 +301,6 @@ export default function DashboardPage() {
           href="/jobs"
           loading={jobs.loading}
           error={jobs.error}
-          emptyTitle={t.dashboard.emptyJobs}
         >
           {activeJobs.length === 0 ? (
             <EmptyState icon={<EmptyIcon />} title={t.dashboard.emptyJobs} />
@@ -322,7 +318,6 @@ export default function DashboardPage() {
           href="/approvals"
           loading={approvals.loading}
           error={approvals.error}
-          emptyTitle={t.dashboard.emptyApprovals}
         >
           {pendingApprovals.length === 0 ? (
             <EmptyState icon={<EmptyIcon />} title={t.dashboard.emptyApprovals} />
@@ -353,7 +348,6 @@ export default function DashboardPage() {
           href="/results"
           loading={results.loading}
           error={results.error}
-          emptyTitle={t.dashboard.emptyResults}
         >
           {results.items.length === 0 ? (
             <EmptyState icon={<EmptyIcon />} title={t.dashboard.emptyResults} />

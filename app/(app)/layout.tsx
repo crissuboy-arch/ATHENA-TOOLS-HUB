@@ -5,6 +5,13 @@ import { MobileNav } from "@/components/layout/MobileNav";
 import { SetupBanner } from "@/components/layout/SetupBanner";
 import { t } from "@/lib/i18n";
 
+/**
+ * Next.js 16 (cacheComponents): este layout faz checagem de sessão via
+ * cookies() no request, portanto NÃO pode ser prerenderado — opt-out
+ * explícito de navegação instantânea (rota "blocking").
+ */
+export const instant = false;
+
 interface SessionUser {
   email: string | null;
 }

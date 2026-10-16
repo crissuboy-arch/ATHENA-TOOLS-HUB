@@ -8,7 +8,8 @@ export interface TextareaProps
 
 export const Textarea = React.forwardRef<HTMLTextAreaElement, TextareaProps>(
   function Textarea({ label, error, id, className = "", ...rest }, ref) {
-    const inputId = id ?? React.useId();
+    const generatedId = React.useId();
+    const inputId = id ?? generatedId;
     const errorId = `${inputId}-error`;
     return (
       <div className={className}>

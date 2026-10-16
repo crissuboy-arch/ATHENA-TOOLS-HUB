@@ -9,7 +9,8 @@ export interface SelectProps
 
 export const Select = React.forwardRef<HTMLSelectElement, SelectProps>(
   function Select({ label, error, options, id, className = "", ...rest }, ref) {
-    const inputId = id ?? React.useId();
+    const generatedId = React.useId();
+    const inputId = id ?? generatedId;
     const errorId = `${inputId}-error`;
     return (
       <div className={className}>
