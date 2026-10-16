@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Athena Tools Hub">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0A1A33"/>
+      <stop offset="1" stop-color="#060F22"/>
+    </linearGradient>
+    <linearGradient id="gold" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#E3CC85"/>
+      <stop offset="1" stop-color="#C6A15B"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#bg)"/>
+  <rect x="40" y="40" width="432" height="432" rx="84" fill="none" stroke="#C6A15B" stroke-width="10" opacity="0.55"/>
+  <path d="M256 128 L384 384 H336 L305 300 H207 L176 384 H128 Z M256 196 L229 268 H283 Z" fill="url(#gold)"/>
+</svg>
