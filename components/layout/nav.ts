@@ -10,8 +10,10 @@ export interface NavSection {
 }
 
 /**
- * App navigation. Icon keys resolve to components in `./icons`.
- * Routes are real app routes (pages land here in later milestones).
+ * App navigation — the 9 canonical interface areas from the Master Blueprint:
+ * Dashboard, Catálogo, Categorias, Conectadas, Criar tarefa, Execuções,
+ * Aprovações, Biblioteca, Configurações (+ Engenharia Reversa module).
+ * Icon keys resolve to components in `./icons`.
  */
 export const navSections: NavSection[] = [
   {
@@ -22,9 +24,11 @@ export const navSections: NavSection[] = [
     title: "Ferramentas",
     items: [
       { href: "/catalog", label: "Catálogo", icon: "catalog" },
+      { href: "/categorias", label: "Categorias", icon: "catalog" },
+      { href: "/jobs/new", label: "Criar tarefa", icon: "jobs" },
       { href: "/jobs", label: "Execuções", icon: "jobs" },
       { href: "/approvals", label: "Aprovações", icon: "approvals" },
-      { href: "/results", label: "Resultados", icon: "results" },
+      { href: "/results", label: "Biblioteca", icon: "results" },
       {
         href: "/reverse-engineering",
         label: "Engenharia Reversa",
@@ -35,7 +39,7 @@ export const navSections: NavSection[] = [
   {
     title: "Administração",
     items: [
-      { href: "/integrations", label: "Integrações", icon: "integrations" },
+      { href: "/integrations", label: "Conectadas", icon: "integrations" },
       { href: "/settings", label: "Configurações", icon: "settings" },
     ],
   },
@@ -45,7 +49,7 @@ export const navSections: NavSection[] = [
 export const mobileNavItems: NavItem[] = [
   { href: "/", label: "Dashboard", icon: "dashboard" },
   { href: "/catalog", label: "Catálogo", icon: "catalog" },
-  { href: "/jobs", label: "Execuções", icon: "jobs" },
+  { href: "/jobs/new", label: "Criar", icon: "jobs" },
   { href: "/approvals", label: "Aprovações", icon: "approvals" },
-  { href: "/settings", label: "Configurações", icon: "settings" },
+  { href: "/settings", label: "Ajustes", icon: "settings" },
 ];

@@ -1,23 +1,25 @@
 /**
  * Athena Tools Hub — job service (persistência + transições auditadas).
  *
- * CONTRATO DE SCHEMA (para alinhamento com o agente de DB — tabelas esperadas):
- *   jobs(id uuid PK, org_id uuid, tool_id text, params jsonb, status text,
- *        idempotency_key text, created_by text, created_at timestamptz,
- *        updated_at timestamptz, error_message text NULL, result jsonb NULL,
+ * CONTRATO DE SCHEMA (alinhado às migrations em supabase/migrations/):
+ *   execution_jobs(id uuid PK, org_id uuid, tool_id uuid NULL → tools.id,
+ *        tool_slug text NULL, integration_id uuid NULL, idempotency_key text,
+ *        state job_state, params jsonb, result jsonb NULL, error jsonb NULL,
+ *        progress numeric, started_at/finished_at timestamptz NULL,
+ *        created_by uuid, created_at/updated_at timestamptz,
  *        UNIQUE(org_id, idempotency_key))
  *   execution_events(id uuid PK, job_id uuid, org_id uuid, type text,
- *        from_status text NULL, to_status text NULL, payload jsonb,
- *        actor_id text, actor_type text, created_at timestamptz)
- *   audit_logs(id uuid PK, org_id uuid, actor_id text, actor_type text,
- *        action text, resource_type text, resource_id text, detail jsonb,
- *        created_at timestamptz)
- *   job_assets(id uuid PK, job_id uuid, org_id uuid, kind text, url text,
- *        metadata jsonb, created_at timestamptz)
- *   tools(id text PK — slug da tool, name text, description text,
- *        version text, status text, capabilities text[], updated_at timestamptz)
+ *        message text NULL, payload jsonb, created_at timestamptz)
+ *   audit_logs(id uuid PK, org_id uuid, actor_user_id uuid NULL,
+ *        actor_type actor_type, action text, entity_type text NULL,
+ *        entity_id text NULL, diff jsonb NULL, created_at timestamptz)
+ *   generated_assets(id uuid PK, job_id uuid NULL, org_id uuid, kind text,
+ *        name text, file_path text NULL, mime_type text NULL,
+ *        size_bytes bigint NULL, metadata jsonb, created_by uuid NULL,
+ *        created_at/updated_at timestamptz)
+ *   tools(id uuid PK, org_id uuid, slug text UNIQUE por org, ...)
  *
- * Toda mudança de status passa pela máquina de estados pura
+ * Toda mudança de estado passa pela máquina de estados pura
  * (lib/jobs/machine.ts) e gera linha em execution_events + audit_logs.
  *
  * HONESTIDADE: se nenhum adapter/executor estiver conectado para a tool,
@@ -73,7 +75,10 @@ export interface JobEventDTO {
 export interface JobAssetDTO {
   id: string;
   kind: string;
+  name: string;
   url: string;
+  mimeType: string | null;
+  sizeBytes: number | null;
   metadata: unknown;
   createdAt: string;
 }
@@ -88,32 +93,34 @@ export function integrationStatusFor(toolId: string): IntegrationStatus {
 }
 
 function toJobDTO(row: Record<string, unknown>): JobDTO {
-  const toolId = String(row.tool_id);
+  const toolSlug = String(row.tool_slug ?? "");
+  const err = row.error as { message?: string } | null;
   return {
     id: String(row.id),
     orgId: String(row.org_id),
-    toolId,
-    status: String(row.status) as JobStatus,
+    toolId: toolSlug,
+    status: String(row.state) as JobStatus,
     params: (row.params as Record<string, unknown>) ?? {},
     idempotencyKey: String(row.idempotency_key),
     createdBy: String(row.created_by ?? ""),
     createdAt: String(row.created_at),
     updatedAt: String(row.updated_at),
-    errorMessage: (row.error_message as string | null) ?? null,
+    errorMessage: err?.message ?? null,
     result: row.result ?? null,
-    integrationStatus: integrationStatusFor(toolId),
+    integrationStatus: integrationStatusFor(toolSlug),
   };
 }
 
 function toEventDTO(row: Record<string, unknown>): JobEventDTO {
+  const payload = (row.payload as Record<string, unknown>) ?? {};
   return {
     id: String(row.id),
     type: String(row.type),
-    fromStatus: (row.from_status as string | null) ?? null,
-    toStatus: (row.to_status as string | null) ?? null,
-    payload: row.payload ?? null,
-    actorId: String(row.actor_id ?? ""),
-    actorType: String(row.actor_type ?? ""),
+    fromStatus: (payload.from_state as string | null) ?? null,
+    toStatus: (payload.to_state as string | null) ?? null,
+    payload,
+    actorId: String(payload.actor_id ?? ""),
+    actorType: String(payload.actor_type ?? ""),
     createdAt: String(row.created_at),
   };
 }
@@ -132,11 +139,19 @@ async function writeEvent(input: {
     job_id: input.jobId,
     org_id: input.orgId,
     type: input.type,
-    from_status: input.fromStatus ?? null,
-    to_status: input.toStatus ?? null,
-    payload: input.payload ?? {},
-    actor_id: input.actor.id,
-    actor_type: input.actor.type,
+    message:
+      input.fromStatus || input.toStatus
+        ? `${input.fromStatus ?? "?"} → ${input.toStatus ?? "?"}`
+        : null,
+    // execution_events has no dedicated from/to/actor columns; they travel
+    // inside payload so the timeline stays queryable without schema drift.
+    payload: {
+      ...(input.payload ?? {}),
+      from_state: input.fromStatus ?? null,
+      to_state: input.toStatus ?? null,
+      actor_id: input.actor.id,
+      actor_type: input.actor.type,
+    },
   });
   if (error) {
     throw new HubError("INTERNAL", "Falha ao registrar evento do job.", 500);
@@ -154,12 +169,17 @@ async function writeAudit(input: {
   const supabase = getSupabaseAdmin();
   const { error } = await supabase.from("audit_logs").insert({
     org_id: input.orgId,
-    actor_id: input.actor.id,
+    // actor_user_id is uuid: only real user ids go there; api_key/system
+    // actors keep their id inside diff so nothing is lost.
+    actor_user_id: input.actor.type === "user" ? input.actor.id : null,
     actor_type: input.actor.type,
     action: input.action,
-    resource_type: input.resourceType,
-    resource_id: input.resourceId,
-    detail: input.detail ?? {},
+    entity_type: input.resourceType,
+    entity_id: input.resourceId,
+    diff: {
+      ...(input.detail ?? {}),
+      actor_id: input.actor.id,
+    },
   });
   if (error) {
     throw new HubError("INTERNAL", "Falha ao registrar auditoria.", 500);
@@ -169,7 +189,7 @@ async function writeAudit(input: {
 async function loadJobRow(jobId: string, orgId: string): Promise<Record<string, unknown>> {
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
-    .from("jobs")
+    .from("execution_jobs")
     .select("*")
     .eq("id", jobId)
     .eq("org_id", orgId)
@@ -196,7 +216,7 @@ export async function createJob(
   const supabase = getSupabaseAdmin();
 
   const { data: existing, error: lookupError } = await supabase
-    .from("jobs")
+    .from("execution_jobs")
     .select("*")
     .eq("org_id", input.orgId)
     .eq("idempotency_key", input.idempotencyKey)
@@ -220,15 +240,27 @@ export async function createJob(
     }
   }
 
+  // Resolve o slug da tool para o uuid (tools.slug é único por org).
+  // Tool desconhecida (ex.: ainda só no catálogo local): tool_id fica NULL,
+  // tool_slug preserva a intenção — estado honesto, sem simulação.
+  const { data: toolRow } = await supabase
+    .from("tools")
+    .select("id")
+    .eq("org_id", input.orgId)
+    .eq("slug", input.toolId)
+    .maybeSingle();
+  const toolUuid = (toolRow as { id?: string } | null)?.id ?? null;
+
   const { data: inserted, error: insertError } = await supabase
-    .from("jobs")
+    .from("execution_jobs")
     .insert({
       org_id: input.orgId,
-      tool_id: input.toolId,
+      tool_id: toolUuid,
+      tool_slug: input.toolId,
       params: input.params,
-      status: "CREATED",
+      state: "CREATED",
       idempotency_key: input.idempotencyKey,
-      created_by: actor.id,
+      created_by: actor.type === "user" ? actor.id : null,
     })
     .select("*")
     .single();
@@ -236,7 +268,7 @@ export async function createJob(
     // Corrida de idempotência: outra requisição inseriu primeiro.
     if (insertError?.code === "23505") {
       const retry = await supabase
-        .from("jobs")
+        .from("execution_jobs")
         .select("*")
         .eq("org_id", input.orgId)
         .eq("idempotency_key", input.idempotencyKey)
@@ -297,7 +329,7 @@ export async function applyTransition(
 ): Promise<JobDTO> {
   assertConfigured();
   const row = await loadJobRow(jobId, orgId);
-  const from = String(row.status) as JobStatus;
+  const from = String(row.state) as JobStatus;
 
   if (!allStates.includes(to)) {
     throw HubError.validation(`Status desconhecido: ${to}.`);
@@ -308,12 +340,12 @@ export async function applyTransition(
 
   const supabase = getSupabaseAdmin();
   const { error } = await supabase
-    .from("jobs")
+    .from("execution_jobs")
     .update({
-      status: to,
+      state: to,
       updated_at: new Date().toISOString(),
       ...(opts.errorMessage !== undefined
-        ? { error_message: opts.errorMessage }
+        ? { error: { message: opts.errorMessage } }
         : {}),
     })
     .eq("id", jobId)
@@ -378,7 +410,7 @@ export async function decideApproval(
 ): Promise<JobDTO> {
   assertConfigured();
   const row = await loadJobRow(jobId, orgId);
-  const status = String(row.status) as JobStatus;
+  const status = String(row.state) as JobStatus;
   if (status !== "PENDING_APPROVAL") {
     throw HubError.invalidTransition(status, decision === "approve" ? "QUEUED" : "CANCELLED");
   }
@@ -409,11 +441,11 @@ export async function listJobs(
   assertConfigured();
   const supabase = getSupabaseAdmin();
   let query = supabase
-    .from("jobs")
+    .from("execution_jobs")
     .select("*", { count: "exact" })
     .eq("org_id", filter.orgId);
-  if (filter.status) query = query.eq("status", filter.status);
-  if (filter.toolId) query = query.eq("tool_id", filter.toolId);
+  if (filter.status) query = query.eq("state", filter.status);
+  if (filter.toolId) query = query.eq("tool_slug", filter.toolId);
 
   const from = (filter.page - 1) * filter.perPage;
   const to = from + filter.perPage - 1;
@@ -459,17 +491,26 @@ export async function getJobAssets(
   await loadJobRow(jobId, orgId);
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
-    .from("job_assets")
+    .from("generated_assets")
     .select("*")
     .eq("job_id", jobId)
     .eq("org_id", orgId)
     .order("created_at", { ascending: true });
   if (error) throw new HubError("INTERNAL", "Falha ao listar assets.", 500);
-  return (data ?? []).map((r) => ({
-    id: String((r as Record<string, unknown>).id),
-    kind: String((r as Record<string, unknown>).kind),
-    url: String((r as Record<string, unknown>).url),
-    metadata: (r as Record<string, unknown>).metadata ?? null,
-    createdAt: String((r as Record<string, unknown>).created_at),
-  }));
+  return (data ?? []).map((r) => {
+    const row = r as Record<string, unknown>;
+    return {
+      id: String(row.id),
+      kind: String(row.kind),
+      name: String(row.name),
+      url: String(row.file_path ?? ""),
+      mimeType: (row.mime_type as string | null) ?? null,
+      sizeBytes:
+        row.size_bytes === null || row.size_bytes === undefined
+          ? null
+          : Number(row.size_bytes),
+      metadata: row.metadata ?? null,
+      createdAt: String(row.created_at),
+    };
+  });
 }

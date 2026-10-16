@@ -1,7 +1,8 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { Suspense, useMemo, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { TOOLS } from "@/lib/catalog/tools";
 import {
   TOOL_CATEGORY_LABELS,
@@ -40,9 +41,21 @@ function matches(tool: (typeof TOOLS)[number], q: string) {
   return hay.includes(q.toLowerCase());
 }
 
-export default function CatalogPage() {
+function isCategory(value: string | null): value is ToolCategory {
+  return (
+    value !== null &&
+    (CATEGORIES as string[]).includes(value) &&
+    value !== "all"
+  );
+}
+
+function CatalogContent() {
+  const searchParams = useSearchParams();
+  const initialCategory = isCategory(searchParams.get("categoria"))
+    ? (searchParams.get("categoria") as ToolCategory)
+    : "all";
   const [query, setQuery] = useState("");
-  const [category, setCategory] = useState<ToolCategory | "all">("all");
+  const [category, setCategory] = useState<ToolCategory | "all">(initialCategory);
   const [state, setState] = useState<ToolState | "all">("all");
 
   const results = useMemo(() => {
@@ -185,5 +198,13 @@ export default function CatalogPage() {
         )}
       </main>
     </div>
+  );
+}
+
+export default function CatalogPage() {
+  return (
+    <Suspense fallback={<div className="p-8 text-sm text-ink-500">Carregando catálogo…</div>}>
+      <CatalogContent />
+    </Suspense>
   );
 }
