@@ -1,0 +1,195 @@
+-- ===========================================================================
+-- ATHENA TOOLS HUB — verify_rls.sql
+-- LIVE security verification: negative tests against a REAL Supabase project.
+--
+-- ⚠ DO NOT RUN YET — only after the owner authorizes the dedicated Supabase
+--   project AND migrations 0001→0005 + bootstrap_organization() +
+--   seed_catalog() have been applied.
+--
+-- HOW TO RUN:
+--   1. Apply migrations 0001→0005 in the SQL editor (numeric order).
+--   2. Create TWO test users in Dashboard → Authentication → Users.
+--      (note their auth UUIDs as <USER_A> and <USER_B>)
+--   3. Run:  SELECT public.bootstrap_organization('Org A', 'org-a', '<USER_A>');
+--      note the org id as <ORG_A>. Repeat for Org B / <USER_B> → <ORG_B>.
+--   4. Run:  SELECT public.seed_catalog('<ORG_A>'::uuid);
+--   5. For each ATTACK below, open a SECOND SQL editor session impersonating
+--      the attacker. In Supabase there is no SET ROLE for auth users, so the
+--      practical approach is: temporarily run the attack query wrapped with
+--      a helper that fakes auth.uid(). The simplest reliable method is the
+--      "request.jwt.claims" trick — OR run the checks via the app's API
+--      with the attacker's session. Each attack lists BOTH the raw-SQL form
+--      (for a superuser simulating the JWT) and the expected outcome.
+--
+-- SIMULATING auth.uid() IN THE SQL EDITOR (run as postgres):
+--   SELECT set_config('request.jwt.claims',
+--     json_build_object('sub', '<ATTACKER_USER_ID>', 'role', 'authenticated')::text,
+--     true);
+--   -- now auth.uid() returns <ATTACKER_USER_ID> for this transaction
+--   -- RESET after each attack: SELECT set_config('request.jwt.claims', '', true);
+--   NOTE: SET ROLE authenticated; is ALSO required for RLS policies
+--   (policies are TO authenticated) to apply. Full impersonation block:
+--     BEGIN;
+--     SET LOCAL ROLE authenticated;
+--     SELECT set_config('request.jwt.claims',
+--       json_build_object('sub','<ATTACKER>','role','authenticated')::text, true);
+--     ... attack query ...
+--     ROLLBACK;
+--
+-- EXPECTED OUTCOME LEGEND:
+--   ✅ BLOCKED  = 0 rows affected / permission error / trigger exception
+--   ❌ LEAK     = the attack SUCCEEDED — STOP, do not go live, report it.
+-- ===========================================================================
+
+-- ===========================================================================
+-- SETUP (run once as postgres, before the attacks)
+-- ===========================================================================
+-- Make USER_A an ADMIN of org A (so attack (a) has a real admin attacker):
+--   UPDATE public.organization_members SET role = 'admin'
+--    WHERE org_id = '<ORG_A>' AND user_id = '<USER_A>';
+-- Keep a second owner? For attack (a) we need exactly one owner + one admin:
+--   -- ensure USER_A is admin, and create a THIRD user as the sole owner:
+--   SELECT public.bootstrap_organization('Org A2', 'org-a2', '<USER_C>'); -- if needed
+-- (Adjust to your test users; the attacks below assume: ORG_A has one owner
+--  (USER_OWNER_A) and one admin (USER_A). ORG_B belongs to USER_B.)
+
+-- ===========================================================================
+-- ATTACK (a) — admin tries to make themselves owner
+-- Expected: ❌ EXCEPTION from guard_membership_write()
+-- ===========================================================================
+-- BEGIN;
+-- SET LOCAL ROLE authenticated;
+-- SELECT set_config('request.jwt.claims',
+--   json_build_object('sub','<USER_A_ADMIN>','role','authenticated')::text, true);
+-- UPDATE public.organization_members SET role = 'owner'
+--  WHERE org_id = '<ORG_A>' AND user_id = '<USER_A_ADMIN>';
+-- -- EXPECTED: ERROR: membership: role changes require the owner role (attempt blocked)
+-- ROLLBACK;
+
+-- ===========================================================================
+-- ATTACK (a2) — admin tries to promote ANOTHER member to owner
+-- Expected: ❌ EXCEPTION from guard_membership_write()
+-- ===========================================================================
+-- BEGIN;
+-- SET LOCAL ROLE authenticated;
+-- SELECT set_config('request.jwt.claims',
+--   json_build_object('sub','<USER_A_ADMIN>','role','authenticated')::text, true);
+-- UPDATE public.organization_members SET role = 'owner'
+--  WHERE org_id = '<ORG_A>' AND user_id = '<USER_MEMBER_A>';
+-- -- EXPECTED: ERROR: membership: role changes require the owner role (attempt blocked)
+-- ROLLBACK;
+
+-- ===========================================================================
+-- ATTACK (a3) — owner tries to demote THEMSELVES (lockout / org orphaning)
+-- Expected: ❌ EXCEPTION from guard_membership_write()
+-- ===========================================================================
+-- BEGIN;
+-- SET LOCAL ROLE authenticated;
+-- SELECT set_config('request.jwt.claims',
+--   json_build_object('sub','<USER_OWNER_A>','role','authenticated')::text, true);
+-- UPDATE public.organization_members SET role = 'member'
+--  WHERE org_id = '<ORG_A>' AND user_id = '<USER_OWNER_A>';
+-- -- EXPECTED: ERROR: membership: owners cannot change their own role
+-- ROLLBACK;
+
+-- ===========================================================================
+-- ATTACK (b) — user of org B tries to READ org A's tools
+-- Expected: ✅ 0 rows (RLS filters by current_org_ids())
+-- ===========================================================================
+-- BEGIN;
+-- SET LOCAL ROLE authenticated;
+-- SELECT set_config('request.jwt.claims',
+--   json_build_object('sub','<USER_B>','role','authenticated')::text, true);
+-- SELECT count(*) FROM public.tools WHERE org_id = '<ORG_A>';
+-- -- EXPECTED: count = 0
+-- SELECT count(*) FROM public.execution_jobs WHERE org_id = '<ORG_A>';
+-- -- EXPECTED: count = 0
+-- SELECT count(*) FROM public.generated_assets WHERE org_id = '<ORG_A>';
+-- -- EXPECTED: count = 0
+-- ROLLBACK;
+
+-- ===========================================================================
+-- ATTACK (c) — job in org B references a tool row of org A
+-- Expected: ❌ EXCEPTION from enforce_same_org()
+-- (RLS alone can't stop this: the FK doesn't constrain org. The trigger must.)
+-- ===========================================================================
+-- BEGIN;
+-- SET LOCAL ROLE authenticated;
+-- SELECT set_config('request.jwt.claims',
+--   json_build_object('sub','<USER_B>','role','authenticated')::text, true);
+-- INSERT INTO public.execution_jobs (org_id, tool_id, tool_slug, idempotency_key, params)
+-- SELECT '<ORG_B>', t.id, 'vectorcraft', 'attack-' || gen_random_uuid(), '{}'
+--   FROM public.tools t WHERE t.org_id = '<ORG_A>' AND t.slug = 'vectorcraft'
+-- LIMIT 1;
+-- -- EXPECTED: ERROR: reference integrity: cross-organization reference blocked
+-- -- NOTE: the SELECT subquery returns 0 rows under RLS (user B can't see org A
+-- -- tools), so the INSERT selects nothing. To test the trigger path properly,
+-- -- run the same INSERT as postgres (bypassing RLS) with a hard-coded tool id
+-- -- from org A and org_id = ORG_B — the trigger must still reject it:
+-- ROLLBACK;
+-- -- (as postgres:)
+-- -- INSERT INTO public.execution_jobs (org_id, tool_id, tool_slug, idempotency_key, params)
+-- -- VALUES ('<ORG_B>', '<TOOL_ID_FROM_ORG_A>', 'vectorcraft', 'attack-x', '{}');
+-- -- EXPECTED: ERROR: reference integrity: cross-organization reference blocked
+
+-- ===========================================================================
+-- ATTACK (d) — non-admin tries to execute bootstrap_organization()
+-- Expected: ❌ permission denied (REVOKE) — and even with EXECUTE, the
+--           trusted-context guard rejects any call carrying a user JWT.
+-- ===========================================================================
+-- BEGIN;
+-- SET LOCAL ROLE authenticated;
+-- SELECT set_config('request.jwt.claims',
+--   json_build_object('sub','<USER_B>','role','authenticated')::text, true);
+-- SELECT public.bootstrap_organization('Evil Org', 'evil-org', '<USER_B>');
+-- -- EXPECTED: ERROR: permission denied for function bootstrap_organization
+-- ROLLBACK;
+-- -- Hostile-takeover variant (would have worked BEFORE 0005):
+-- -- SELECT public.bootstrap_organization('x', 'org-a', '<USER_B>');
+-- -- BEFORE FIX: made USER_B owner of ORG_A. AFTER FIX: permission denied.
+
+-- ===========================================================================
+-- ATTACK (e) — viewer tries to INSERT a job (mutation)
+-- Expected: ✅ 0 rows inserted (WITH CHECK fails: viewer not in
+--           owner/admin/member) — INSERT returns "0 rows" via RLS.
+-- ===========================================================================
+-- -- (make USER_V a viewer of ORG_A first, as postgres:)
+-- -- INSERT INTO public.organization_members (org_id, user_id, role)
+-- -- VALUES ('<ORG_A>', '<USER_V>', 'viewer');
+-- BEGIN;
+-- SET LOCAL ROLE authenticated;
+-- SELECT set_config('request.jwt.claims',
+--   json_build_object('sub','<USER_V>','role','authenticated')::text, true);
+-- INSERT INTO public.execution_jobs (org_id, tool_slug, idempotency_key, params)
+-- VALUES ('<ORG_A>', 'vectorcraft', 'attack-viewer', '{}');
+-- -- EXPECTED: ERROR: new row violates row-level security policy
+-- ROLLBACK;
+
+-- ===========================================================================
+-- ATTACK (f) — member tries to decide an approval (owner/admin only)
+-- Expected: ✅ UPDATE affects 0 rows (policy approval_requests_update_owner_admin
+--           requires owner/admin). Verify the approval row is UNCHANGED.
+-- ===========================================================================
+-- -- (as postgres: create a pending approval in ORG_A, and a member USER_M)
+-- BEGIN;
+-- SET LOCAL ROLE authenticated;
+-- SELECT set_config('request.jwt.claims',
+--   json_build_object('sub','<USER_M_MEMBER>','role','authenticated')::text, true);
+-- UPDATE public.approval_requests
+--    SET status = 'approved', decided_by = '<USER_M_MEMBER>'
+--  WHERE id = '<APPROVAL_ID>' AND org_id = '<ORG_A>';
+-- -- EXPECTED: UPDATE 0  (no error, but zero rows — policy filtered it out)
+-- ROLLBACK;
+-- -- Then confirm as postgres: SELECT status FROM public.approval_requests
+-- --   WHERE id = '<APPROVAL_ID>';  -- must still be 'pending'
+
+-- ===========================================================================
+-- SANITY — legitimate flows still work (run as the real users, expect success)
+-- ===========================================================================
+-- 1. Owner updates a member's display-level row (no role change) → OK.
+-- 2. Owner promotes a member to admin (not owner) → OK.
+-- 3. Owner grants owner to a member when ≥2 owners will remain → OK.
+-- 4. Member creates a job with a tool_slug of their own org → OK.
+-- 5. bootstrap_organization() as postgres (SQL editor, no JWT) → OK.
+-- 6. seed_catalog('<ORG_A>') as postgres → OK, 9 tools + capabilities.
+-- ===========================================================================

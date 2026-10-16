@@ -88,50 +88,70 @@ export default function ResultsClient({ orgs }: { orgs: Org[] }) {
   const [error, setError] = useState<string | null>(null);
   const [preview, setPreview] = useState<Asset | null>(null);
 
-  const load = useCallback(async () => {
-    if (!orgId) return;
-    setLoading(true);
-    setError(null);
-    try {
-      // The API exposes assets per job only — aggregate the most recent
-      // completed jobs. No global assets listing exists (honest, no invention).
-      const [jobsBody, toolsBody] = await Promise.all([
-        apiList<Job>(withOrg(`/jobs?status=COMPLETED&page=1&perPage=${RECENT_JOBS}`, orgId)),
-        apiGet<{ tools: Tool[] }>("/tools").catch(() => ({ tools: [] as Tool[] })),
-      ]);
-      const toolNames = new Map((toolsBody.tools ?? []).map((t) => [t.id, t.name]));
-      const settled = await Promise.all(
-        jobsBody.items.map(async (job) => {
-          try {
-            const body = await apiGet<{ assets: Asset[] }>(withOrg(`/jobs/${job.id}/assets`, orgId));
-            return (body.assets ?? []).map((a) => ({
-              ...a,
-              jobId: job.id,
-              toolName: toolNames.get(job.toolId) ?? null,
-            }));
-          } catch {
-            return [];
-          }
-        }),
-      );
-      setAssets(settled.flat());
-    } catch (err) {
-      setError(
-        isDbNotConfigured(err)
-          ? DB_NOT_CONFIGURED_MESSAGE
-          : err instanceof ApiError
-            ? err.message
-            : "Não foi possível carregar os resultados.",
-      );
-      setAssets([]);
-    } finally {
-      setLoading(false);
-    }
+  // Pure data fetch (no setState inside): safe to call from effects via
+  // .then() callbacks (React 19 lint rule).
+  const fetchAssets = useCallback(async () => {
+    // The API exposes assets per job only — aggregate the most recent
+    // completed jobs. No global assets listing exists (honest, no invention).
+    const [jobsBody, toolsBody] = await Promise.all([
+      apiList<Job>(withOrg(`/jobs?status=COMPLETED&page=1&perPage=${RECENT_JOBS}`, orgId as string)),
+      apiGet<{ tools: Tool[] }>("/tools").catch(() => ({ tools: [] as Tool[] })),
+    ]);
+    const toolNames = new Map((toolsBody.tools ?? []).map((t) => [t.id, t.name]));
+    const settled = await Promise.all(
+      jobsBody.items.map(async (job) => {
+        try {
+          const body = await apiGet<{ assets: Asset[] }>(
+            withOrg(`/jobs/${job.id}/assets`, orgId as string),
+          );
+          return (body.assets ?? []).map((a) => ({
+            ...a,
+            jobId: job.id,
+            toolName: toolNames.get(job.toolId) ?? null,
+          }));
+        } catch {
+          return [];
+        }
+      }),
+    );
+    return settled.flat();
   }, [orgId]);
 
+  const applyAssets = useCallback((assets: Awaited<ReturnType<typeof fetchAssets>>) => {
+    setAssets(assets);
+    setError(null);
+  }, []);
+
+  const applyAssetsError = useCallback((err: unknown) => {
+    setError(
+      isDbNotConfigured(err)
+        ? DB_NOT_CONFIGURED_MESSAGE
+        : err instanceof ApiError
+          ? err.message
+          : "Não foi possível carregar os resultados.",
+    );
+    setAssets([]);
+  }, []);
+
+  // setState only inside .then()/.catch()/.finally() callbacks (permitted).
+  // Initial useState(true) covers the first paint.
   useEffect(() => {
-    void load();
-  }, [load]);
+    if (!orgId) return;
+    let cancelled = false;
+    fetchAssets()
+      .then((assets) => {
+        if (!cancelled) applyAssets(assets);
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) applyAssetsError(err);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [orgId, fetchAssets, applyAssets, applyAssetsError]);
 
   const sorted = useMemo(
     () => assets.slice().sort((a, b) => b.createdAt.localeCompare(a.createdAt)),

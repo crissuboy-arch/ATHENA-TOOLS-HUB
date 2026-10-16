@@ -72,35 +72,78 @@ export default function ApprovalsClient({ orgs }: { orgs: Org[] }) {
     return map;
   }, [tools]);
 
-  const load = useCallback(async () => {
+  // Pure data fetch (no setState inside): safe to call from effects via
+  // .then() callbacks (React 19 lint rule) and from event handlers.
+  const fetchApprovals = useCallback(async () => {
+    // The approvals queue IS the list of jobs in PENDING_APPROVAL.
+    const { items: fetched, page: pg } = await apiList<Job>(
+      withOrg(`/approvals?page=${page}&perPage=${PER_PAGE}`, orgId as string),
+    );
+    return { items: fetched, total: pg.total };
+  }, [orgId, page]);
+
+  const applyApprovals = useCallback(
+    (data: Awaited<ReturnType<typeof fetchApprovals>>) => {
+      setItems(data.items);
+      setTotal(data.total);
+      setError(null);
+    },
+    [],
+  );
+
+  const applyApprovalsError = useCallback((err: unknown) => {
+    setError(
+      isDbNotConfigured(err)
+        ? DB_NOT_CONFIGURED_MESSAGE
+        : err instanceof ApiError
+          ? err.message
+          : "Não foi possível carregar as aprovações.",
+    );
+    setItems([]);
+    setTotal(0);
+  }, []);
+
+  // setState only inside .then()/.catch()/.finally() callbacks (permitted);
+  // the loading flag is reset by the event handlers below.
+  useEffect(() => {
     if (!orgId || tab !== "pending") return;
+    let cancelled = false;
+    fetchApprovals()
+      .then((data) => {
+        if (!cancelled) applyApprovals(data);
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) applyApprovalsError(err);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [orgId, tab, fetchApprovals, applyApprovals, applyApprovalsError]);
+
+  async function refreshApprovals() {
     setLoading(true);
-    setError(null);
     try {
-      // The approvals queue IS the list of jobs in PENDING_APPROVAL.
-      const { items: fetched, page: pg } = await apiList<Job>(
-        withOrg(`/approvals?page=${page}&perPage=${PER_PAGE}`, orgId),
-      );
-      setItems(fetched);
-      setTotal(pg.total);
+      applyApprovals(await fetchApprovals());
     } catch (err) {
-      setError(
-        isDbNotConfigured(err)
-          ? DB_NOT_CONFIGURED_MESSAGE
-          : err instanceof ApiError
-            ? err.message
-            : "Não foi possível carregar as aprovações.",
-      );
-      setItems([]);
-      setTotal(0);
+      applyApprovalsError(err);
     } finally {
       setLoading(false);
     }
-  }, [orgId, tab, page]);
+  }
 
-  useEffect(() => {
-    void load();
-  }, [load]);
+  function changeTab(v: Tab) {
+    setLoading(true);
+    setTab(v);
+    setPage(1);
+  }
+
+  function changePage(p: number) {
+    setLoading(true);
+    setPage(p);
+  }
 
   function openDecision(job: Job, decision: Decision) {
     setDecisionTarget({ job, decision });
@@ -122,7 +165,7 @@ export default function ApprovalsClient({ orgs }: { orgs: Org[] }) {
         justification: justification.trim(),
       });
       setDecisionTarget(null);
-      await load();
+      await refreshApprovals();
     } catch (err) {
       setJustificationError(
         err instanceof ApiError ? err.message : "Não foi possível registrar a decisão.",
@@ -149,10 +192,7 @@ export default function ApprovalsClient({ orgs }: { orgs: Org[] }) {
           { id: "history", label: "Histórico" },
         ]}
         activeId={tab}
-        onChange={(id) => {
-          setTab(id as Tab);
-          setPage(1);
-        }}
+        onChange={(id) => changeTab(id as Tab)}
       />
 
       {tab === "history" ? (
@@ -226,7 +266,7 @@ export default function ApprovalsClient({ orgs }: { orgs: Org[] }) {
       )}
 
       {tab === "pending" && !loading && !error && total > 0 ? (
-        <Pagination page={page} perPage={PER_PAGE} total={total} onChange={setPage} />
+        <Pagination page={page} perPage={PER_PAGE} total={total} onChange={changePage} />
       ) : null}
 
       <Modal

@@ -20,6 +20,18 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * 401 redirect handler, registered once by the app shell
+ * (AuthRedirectRegistrar). Kept out of module scope navigation so this
+ * isomorphic client never touches window.location directly.
+ */
+type UnauthorizedHandler = () => void;
+let unauthorizedHandler: UnauthorizedHandler | null = null;
+
+export function setUnauthorizedHandler(fn: UnauthorizedHandler | null): void {
+  unauthorizedHandler = fn;
+}
+
 function parseBody(text: string): unknown {
   if (!text) return undefined;
   try {
@@ -37,7 +49,10 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   });
 
   if (res.status === 401 && typeof window !== "undefined") {
-    window.location.href = "/login";
+    // No direct window.location assignment (Next.js lint rule): the app
+    // shell registers a router-based handler (see AuthRedirectRegistrar).
+    // Without a handler, the ApiError below surfaces honestly in the UI.
+    unauthorizedHandler?.();
     throw new ApiError(401, "Sessão expirada. Redirecionando para o login…");
   }
 

@@ -4,37 +4,21 @@ import * as React from "react";
 import Link from "next/link";
 import { t } from "@/lib/i18n";
 import { isSupabaseConfigured } from "@/lib/supabase-browser";
+import { useLocalStorageValue } from "@/lib/use-local-storage";
 
 const DISMISS_KEY = "ath-setup-banner-dismissed";
 
 /**
  * Non-blocking, honest banner shown while Supabase is not connected.
  * Rendered only when there is really nothing to connect to — never a fake.
+ * Dismissal persists in localStorage via an SSR-safe hook (no effect needed).
  */
 export function SetupBanner() {
-  const [visible, setVisible] = React.useState(false);
+  const [dismissed, setDismissed] = useLocalStorageValue(DISMISS_KEY);
 
-  React.useEffect(() => {
-    try {
-      if (
-        !isSupabaseConfigured() &&
-        localStorage.getItem(DISMISS_KEY) !== "1"
-      ) {
-        setVisible(true);
-      }
-    } catch {
-      if (!isSupabaseConfigured()) setVisible(true);
-    }
-  }, []);
+  const visible = !isSupabaseConfigured() && dismissed !== "1";
 
-  const dismiss = () => {
-    try {
-      localStorage.setItem(DISMISS_KEY, "1");
-    } catch {
-      /* ignore */
-    }
-    setVisible(false);
-  };
+  const dismiss = () => setDismissed("1");
 
   if (!visible) return null;
 

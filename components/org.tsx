@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback } from "react";
 import type { Org } from "@/lib/workflow-models";
+import { useLocalStorageValue } from "@/lib/use-local-storage";
 import { Select } from "./workflows-ui";
 import { EmptyState } from "./workflows-ui";
 
@@ -11,6 +12,11 @@ const STORAGE_KEY = "ath-org-id";
  * Resolves the active org for the workflows UI.
  * Real memberships come from the server (getOrgs); the user's choice
  * persists in localStorage. Nothing is invented.
+ *
+ * The stored id is read via useSyncExternalStore (SSR-safe, no
+ * set-state-in-effect): server renders the fallback, the client reconciles
+ * without a hydration warning. `ready` is therefore always true — the gate
+ * it used to provide is no longer needed.
  */
 export function useOrg(orgs: Org[]): {
   orgId: string | null;
@@ -18,36 +24,21 @@ export function useOrg(orgs: Org[]): {
   setOrgId: (id: string) => void;
   ready: boolean;
 } {
-  const [orgId, setOrgIdState] = useState<string | null>(null);
-  const [ready, setReady] = useState(false);
+  const [storedId, setStoredId] = useLocalStorageValue(STORAGE_KEY);
 
-  useEffect(() => {
-    let stored: string | null = null;
-    try {
-      stored = localStorage.getItem(STORAGE_KEY);
-    } catch {
-      /* storage indisponível */
-    }
-    if (stored && orgs.some((o) => o.id === stored)) {
-      setOrgIdState(stored);
-    } else if (orgs.length > 0) {
-      setOrgIdState(orgs[0].id);
-    } else {
-      setOrgIdState(null);
-    }
-    setReady(true);
-  }, [orgs]);
+  const orgId =
+    storedId && orgs.some((o) => o.id === storedId)
+      ? storedId
+      : orgs.length > 0
+        ? orgs[0].id
+        : null;
 
-  function setOrgId(id: string) {
-    try {
-      localStorage.setItem(STORAGE_KEY, id);
-    } catch {
-      /* ignore */
-    }
-    setOrgIdState(id);
-  }
+  const setOrgId = useCallback(
+    (id: string) => setStoredId(id),
+    [setStoredId],
+  );
 
-  return { orgId, orgs, setOrgId, ready };
+  return { orgId, orgs, setOrgId, ready: true };
 }
 
 /** Org switcher — rendered only when the user belongs to more than one org. */

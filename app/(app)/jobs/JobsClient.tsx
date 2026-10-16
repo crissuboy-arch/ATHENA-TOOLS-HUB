@@ -66,45 +66,81 @@ export default function JobsClient({ orgs }: { orgs: Org[] }) {
     return map;
   }, [tools]);
 
-  const load = useCallback(async () => {
-    if (!orgId) return;
-    setLoading(true);
-    setError(null);
-    try {
-      const params = new URLSearchParams({
-        page: String(page),
-        perPage: String(PER_PAGE),
-      });
-      if (status) params.set("status", status);
-      if (toolId) params.set("toolId", toolId);
-      const { items, page: pg } = await apiList<Job>(withOrg(`/jobs?${params.toString()}`, orgId));
-      setJobs(items);
-      setTotal(pg.total);
-    } catch (err) {
-      setError(
-        isDbNotConfigured(err)
-          ? DB_NOT_CONFIGURED_MESSAGE
-          : err instanceof ApiError
-            ? err.message
-            : "Não foi possível carregar as tarefas.",
-      );
-      setJobs([]);
-      setTotal(0);
-    } finally {
-      setLoading(false);
-    }
+  // Pure data fetch (no setState inside): safe to call from effects via
+  // .then() callbacks (React 19 lint rule) and from event handlers.
+  const fetchJobs = useCallback(async () => {
+    const params = new URLSearchParams({
+      page: String(page),
+      perPage: String(PER_PAGE),
+    });
+    if (status) params.set("status", status);
+    if (toolId) params.set("toolId", toolId);
+    const { items, page: pg } = await apiList<Job>(
+      withOrg(`/jobs?${params.toString()}`, orgId as string),
+    );
+    return { items, total: pg.total };
   }, [orgId, page, status, toolId]);
 
+  const applyJobs = useCallback((data: Awaited<ReturnType<typeof fetchJobs>>) => {
+    setJobs(data.items);
+    setTotal(data.total);
+    setError(null);
+  }, []);
+
+  const applyJobsError = useCallback((err: unknown) => {
+    setError(
+      isDbNotConfigured(err)
+        ? DB_NOT_CONFIGURED_MESSAGE
+        : err instanceof ApiError
+          ? err.message
+          : "Não foi possível carregar as tarefas.",
+    );
+    setJobs([]);
+    setTotal(0);
+  }, []);
+
+  // setState only inside .then()/.catch()/.finally() callbacks (permitted);
+  // the loading flag is reset by the filter-change handlers below.
   useEffect(() => {
-    void load();
-  }, [load]);
+    if (!orgId) return;
+    let cancelled = false;
+    fetchJobs()
+      .then((data) => {
+        if (!cancelled) applyJobs(data);
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) applyJobsError(err);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [orgId, fetchJobs, applyJobs, applyJobsError]);
+
+  function beginReload() {
+    setLoading(true);
+  }
 
   function changeStatus(v: "" | JobState) {
+    beginReload();
     setStatus(v);
     setPage(1);
   }
   function changeTool(v: string) {
+    beginReload();
     setToolId(v);
+    setPage(1);
+  }
+  function changePage(p: number) {
+    beginReload();
+    setPage(p);
+  }
+  function clearFilters() {
+    beginReload();
+    setStatus("");
+    setToolId("");
     setPage(1);
   }
 
@@ -157,11 +193,7 @@ export default function JobsClient({ orgs }: { orgs: Org[] }) {
           <div className="flex items-end">
             <Button
               tone="secondary"
-              onClick={() => {
-                setStatus("");
-                setToolId("");
-                setPage(1);
-              }}
+              onClick={clearFilters}
               disabled={!hasActiveFilters}
             >
               Limpar filtros
@@ -232,7 +264,7 @@ export default function JobsClient({ orgs }: { orgs: Org[] }) {
       )}
 
       {!loading && !error && total > 0 ? (
-        <Pagination page={page} perPage={PER_PAGE} total={total} onChange={setPage} />
+        <Pagination page={page} perPage={PER_PAGE} total={total} onChange={changePage} />
       ) : null}
     </div>
   );

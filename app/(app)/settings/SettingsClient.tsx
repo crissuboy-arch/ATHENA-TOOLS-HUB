@@ -2,12 +2,12 @@
 
 import { useEffect, useState } from "react";
 import type { Org } from "@/lib/workflow-models";
+import { useLocalStorageValue } from "@/lib/use-local-storage";
 import {
   Alert,
   Badge,
   Card,
   Field,
-  LoadingState,
   PageHeader,
   Select,
   Tabs,
@@ -121,14 +121,21 @@ function SecurityTab() {
 /* ================= PREFERÊNCIAS ================= */
 
 function PreferencesTab() {
-  const [theme, setTheme] = useState<ThemePref>("system");
-  const [mounted, setMounted] = useState(false);
+  // SSR-safe persisted preference (no set-state-in-effect): the DOM is
+  // synchronized in effects below, which never call setState.
+  const [stored, setStored] = useLocalStorageValue(THEME_KEY);
+  const theme: ThemePref =
+    stored === "light" || stored === "dark" || stored === "system"
+      ? stored
+      : "system";
 
+  // Apply the preference to the document (external system sync).
   useEffect(() => {
-    const current = readTheme();
-    setTheme(current);
-    applyTheme(current);
-    setMounted(true);
+    applyTheme(theme);
+  }, [theme]);
+
+  // Follow OS-level changes while the preference is "system".
+  useEffect(() => {
     const mq = window.matchMedia("(prefers-color-scheme: dark)");
     const onChange = () => {
       if (readTheme() === "system") applyTheme("system");
@@ -138,11 +145,9 @@ function PreferencesTab() {
   }, []);
 
   function changeTheme(pref: ThemePref) {
-    setTheme(pref);
-    applyTheme(pref);
+    // Persisted via the hook; the applyTheme effect above runs next render.
+    setStored(pref);
   }
-
-  if (!mounted) return <LoadingState label="Carregando preferências…" />;
 
   return (
     <Card className="max-w-xl p-5">

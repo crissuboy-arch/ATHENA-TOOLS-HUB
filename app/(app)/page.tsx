@@ -61,9 +61,12 @@ function useApiList(url: string): ApiState {
     error: false,
   });
 
+  // No synchronous setState in the effect body (React 19 lint rule):
+  // every setState below happens after an `await`, inside the async
+  // continuation. Initial useState({ loading: true }) covers first paint;
+  // `url` never changes for these dashboard tiles.
   React.useEffect(() => {
     let cancelled = false;
-    setState((s) => ({ ...s, loading: true, error: false }));
     (async () => {
       try {
         const res = await fetch(url);

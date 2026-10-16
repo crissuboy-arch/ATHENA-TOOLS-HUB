@@ -107,19 +107,36 @@ export default function NewJobClient({ orgs }: { orgs: Org[] }) {
   );
 
   // Detail carries integrationStatus ('ready' only when a real executor is connected).
+  // No synchronous setState in the effect path (React 19 lint rule): the
+  // "no selection" case is derived during render (effectiveDetail), and the
+  // loading flag is raised by the selectTool event handler below.
   useEffect(() => {
-    if (!selectedToolId) {
-      setToolDetail(null);
-      return;
-    }
-    setDetailLoading(true);
+    if (!selectedToolId) return;
+    let cancelled = false;
     apiGet<{ tool: Tool }>(`/tools/${encodeURIComponent(selectedToolId)}`)
-      .then((body) => setToolDetail(body.tool))
-      .catch(() => setToolDetail(selectedTool ?? null))
-      .finally(() => setDetailLoading(false));
+      .then((body) => {
+        if (!cancelled) setToolDetail(body.tool);
+      })
+      .catch(() => {
+        if (!cancelled) setToolDetail(selectedTool ?? null);
+      })
+      .finally(() => {
+        if (!cancelled) setDetailLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [selectedToolId, selectedTool]);
 
-  const operational = toolDetail ? isToolOperational(toolDetail) : false;
+  // Derived: no selection → no detail (instead of setToolDetail(null) in an effect).
+  const effectiveDetail = selectedToolId ? toolDetail : null;
+  const operational = effectiveDetail ? isToolOperational(effectiveDetail) : false;
+
+  function selectTool(id: string) {
+    setDetailLoading(true);
+    setToolDetail(null);
+    setSelectedToolId(id);
+  }
 
   /* ----- params editor ----- */
 
@@ -248,7 +265,7 @@ export default function NewJobClient({ orgs }: { orgs: Org[] }) {
                   <button
                     key={tool.id}
                     type="button"
-                    onClick={() => setSelectedToolId(tool.id)}
+                    onClick={() => selectTool(tool.id)}
                     aria-pressed={selected}
                     className={`rounded-xl border p-4 text-left transition-colors ${
                       selected
@@ -283,7 +300,7 @@ export default function NewJobClient({ orgs }: { orgs: Org[] }) {
             </div>
           )}
 
-          {selectedTool && !detailLoading && toolDetail && !operational ? (
+          {selectedTool && !detailLoading && effectiveDetail && !operational ? (
             <div className="mt-4">
               <Alert tone="warning" title="Executor pendente">
                 A ferramenta “{selectedTool.name}” ainda não tem um executor real conectado — a

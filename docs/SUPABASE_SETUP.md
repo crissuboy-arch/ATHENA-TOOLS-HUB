@@ -24,9 +24,11 @@ In the Supabase dashboard → **SQL editor**, run each file from
 | ----------------- | ----------------------------------------------- |
 | `0001_core.sql`   | Tables, enums, `updated_at` triggers            |
 | `0002_rls.sql`    | Enables RLS on ALL tables + role-based policies |
-| `0003_seed.sql`   | Tool catalog seed (honest states only)          |
+| `0003_seed.sql`   | Defines `seed_catalog(org_id)` (org-scoped catalog, verified licenses) |
+| `0004_job_tool_slug.sql` | Adds `tool_slug` to `execution_jobs`    |
+| `0005_security_hardening.sql` | REVOKEs `bootstrap_organization`, role-escalation trigger, cross-org FK triggers |
 
-All three are re-runnable. Verify in **Table editor** that the 11 tables
+All five are re-runnable. Verify in **Table editor** that the 11 tables
 exist (`organizations`, `organization_members`, `tools`,
 `tool_capabilities`, `integrations`, `execution_jobs`, `execution_events`,
 `approval_requests`, `generated_assets`, `usage_records`, `audit_logs`).
@@ -43,11 +45,25 @@ exist (`organizations`, `organization_members`, `tools`,
    select public.bootstrap_organization('Ofensiva Criativa', 'ofensiva-criativa', '<auth-user-id>');
    ```
 
-   `bootstrap_organization(name, slug)` is defined in `0002_rls.sql`. It is
-   the only supported way to create the first org + owner membership,
-   because RLS forbids users from inserting their own membership rows.
-3. The `default` org created by `0003_seed.sql` holds the seeded catalog;
-   the owner can delete it or keep it as a reference catalog.
+   `bootstrap_organization(name, slug, user_id)` is defined in `0002_rls.sql`
+   and hardened in `0005_security_hardening.sql`. It is the only supported way
+   to create the first org + owner membership, because RLS forbids users from
+   inserting their own membership rows.
+
+   Security: `EXECUTE` is REVOKED from `PUBLIC`/`anon`/`authenticated`, and
+   the function rejects any call carrying a user JWT — it runs ONLY in the
+   SQL editor (postgres) or via `service_role`. There is no public
+   org-creation endpoint.
+3. Seed the catalog for the new org:
+
+   ```sql
+   select public.seed_catalog('<org-id-from-step-2>');
+   ```
+
+   The catalog is **org-scoped** (each org gets its own copy with independent
+   states). Licenses seeded are the verified values from
+   `docs/CATALOG_LICENSES.md`; re-running never overwrites `state`,
+   `license` or `license_verified`.
 
 ## 4. Set the environment variables
 
@@ -85,6 +101,10 @@ Run these checks in the SQL editor and in the app:
 5. **Seed honesty** — `select slug, state from tools` must show only
    `cataloged`, `needs-config` or `in-development`. If anything reads
    `operational-tested` here, the seed was tampered with — investigate.
+6. **Full attack matrix** — run `supabase/verify_rls.sql` (all six attack
+   scenarios: privilege escalation, cross-org reads, cross-org FK smuggling,
+   `bootstrap_organization` abuse, viewer mutation, member approval). Every
+   attack must be BLOCKED with the expected error/zero-rows outcome.
 
 ## 6. When Supabase is NOT configured (current state)
 

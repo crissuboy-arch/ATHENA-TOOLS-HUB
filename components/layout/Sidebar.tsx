@@ -7,31 +7,19 @@ import { navSections } from "./nav";
 import { NavIcon, CollapseIcon, ExpandIcon } from "./icons";
 import { Logo } from "./Logo";
 import { t } from "@/lib/i18n";
+import { useLocalStorageValue } from "@/lib/use-local-storage";
 
 const STORAGE_KEY = "ath-sidebar-collapsed";
 
 export function Sidebar() {
   const pathname = usePathname();
-  const [collapsed, setCollapsed] = React.useState(false);
-
-  React.useEffect(() => {
-    try {
-      setCollapsed(localStorage.getItem(STORAGE_KEY) === "1");
-    } catch {
-      /* ignore */
-    }
-  }, []);
+  // SSR-safe persisted flag (no set-state-in-effect): server renders
+  // expanded, the client reconciles without a hydration warning.
+  const [collapsedRaw, setCollapsedRaw] = useLocalStorageValue(STORAGE_KEY);
+  const collapsed = collapsedRaw === "1";
 
   const toggle = () => {
-    setCollapsed((prev) => {
-      const next = !prev;
-      try {
-        localStorage.setItem(STORAGE_KEY, next ? "1" : "0");
-      } catch {
-        /* ignore */
-      }
-      return next;
-    });
+    setCollapsedRaw(collapsed ? "0" : "1");
   };
 
   const isActive = (href: string) =>

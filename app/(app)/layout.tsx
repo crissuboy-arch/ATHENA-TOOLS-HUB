@@ -3,6 +3,7 @@ import { Sidebar } from "@/components/layout/Sidebar";
 import { Topbar } from "@/components/layout/Topbar";
 import { MobileNav } from "@/components/layout/MobileNav";
 import { SetupBanner } from "@/components/layout/SetupBanner";
+import { AuthRedirectRegistrar } from "@/components/auth-redirect";
 import { t } from "@/lib/i18n";
 
 /**
@@ -50,6 +51,7 @@ export default async function AppLayout({
 
   return (
     <div className="flex min-h-screen bg-mist">
+      <AuthRedirectRegistrar />
       <a
         href="#conteudo"
         className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50 focus:rounded-lg focus:bg-gold-500 focus:px-4 focus:py-2 focus:text-sm focus:font-semibold focus:text-navy-950"

@@ -66,51 +66,72 @@ export default function JobDetailClient({
   const [actionBusy, setActionBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
-    if (!orgId) return;
-    setLoading(true);
-    setError(null);
-    setNotFound(false);
+  // Pure data fetch (no setState inside): safe to call from effects via
+  // .then() callbacks (React 19 lint rule) and from event handlers.
+  const fetchDetail = useCallback(async () => {
+    const [jobBody, eventsBody] = await Promise.all([
+      apiGet<{ job: Job }>(withOrg(`/jobs/${id}`, orgId as string)),
+      apiList<JobEvent>(withOrg(`/jobs/${id}/events`, orgId as string)),
+    ]);
+    let assets: Asset[] = [];
     try {
-      const [jobBody, eventsBody] = await Promise.all([
-        apiGet<{ job: Job }>(withOrg(`/jobs/${id}`, orgId)),
-        apiList<JobEvent>(withOrg(`/jobs/${id}/events`, orgId)),
-      ]);
-      setJob(jobBody.job);
-      setEvents(eventsBody.items);
-      try {
-        const assetsBody = await apiGet<{ assets: Asset[] }>(withOrg(`/jobs/${id}/assets`, orgId));
-        setAssets(assetsBody.assets ?? []);
-      } catch {
-        setAssets([]);
-      }
-      try {
-        const toolsBody = await apiGet<{ tools: Tool[] }>("/tools");
-        const match = (toolsBody.tools ?? []).find((t) => t.id === jobBody.job.toolId);
-        setToolName(match?.name ?? null);
-      } catch {
-        setToolName(null);
-      }
-    } catch (err) {
-      if (err instanceof ApiError && err.status === 404) {
-        setNotFound(true);
-      } else {
-        setError(
-          isDbNotConfigured(err)
-            ? DB_NOT_CONFIGURED_MESSAGE
-            : err instanceof ApiError
-              ? err.message
-              : "Não foi possível carregar a tarefa.",
-        );
-      }
-    } finally {
-      setLoading(false);
+      const assetsBody = await apiGet<{ assets: Asset[] }>(
+        withOrg(`/jobs/${id}/assets`, orgId as string),
+      );
+      assets = assetsBody.assets ?? [];
+    } catch {
+      /* assets stay empty */
     }
+    let toolName: string | null = null;
+    try {
+      const toolsBody = await apiGet<{ tools: Tool[] }>("/tools");
+      toolName = (toolsBody.tools ?? []).find((t) => t.id === jobBody.job.toolId)?.name ?? null;
+    } catch {
+      /* toolName stays null */
+    }
+    return { job: jobBody.job, events: eventsBody.items, assets, toolName };
   }, [id, orgId]);
 
+  const applyDetail = useCallback((data: Awaited<ReturnType<typeof fetchDetail>>) => {
+    setJob(data.job);
+    setEvents(data.events);
+    setAssets(data.assets);
+    setToolName(data.toolName);
+    setNotFound(false);
+    setError(null);
+  }, []);
+
+  const applyDetailError = useCallback((err: unknown) => {
+    if (err instanceof ApiError && err.status === 404) {
+      setNotFound(true);
+    } else {
+      setError(
+        isDbNotConfigured(err)
+          ? DB_NOT_CONFIGURED_MESSAGE
+          : err instanceof ApiError
+            ? err.message
+            : "Não foi possível carregar a tarefa.",
+      );
+    }
+  }, []);
+
   useEffect(() => {
-    void load();
-  }, [load]);
+    if (!orgId) return;
+    let cancelled = false;
+    fetchDetail()
+      .then((data) => {
+        if (!cancelled) applyDetail(data);
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) applyDetailError(err);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [orgId, fetchDetail, applyDetail, applyDetailError]);
 
   async function cancelJob() {
     if (!job || !orgId) return;
@@ -123,7 +144,14 @@ export default function JobDetailClient({
       });
       setConfirmCancel(false);
       setCancelReason("");
-      await load();
+      setLoading(true);
+      try {
+        applyDetail(await fetchDetail());
+      } catch (err) {
+        applyDetailError(err);
+      } finally {
+        setLoading(false);
+      }
     } catch (err) {
       setActionError(
         err instanceof ApiError ? err.message : "Não foi possível cancelar a tarefa.",
