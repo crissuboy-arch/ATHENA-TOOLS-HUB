@@ -1,0 +1,68 @@
+@import "tailwindcss";
+
+/* ATHENA TOOLS HUB — premium SaaS identity.
+   Dark navy + white + elegant gold + dark gray.
+   NO purple, NO orange as primary colors. */
+@theme {
+  --color-navy-950: #060f22;
+  --color-navy-900: #0a1a33;
+  --color-navy-800: #10254a;
+  --color-navy-700: #16325f;
+  --color-navy-600: #1e4179;
+  --color-navy-100: #dbe4f2;
+  --color-navy-50: #eef2f9;
+
+  --color-gold-700: #9a7a3c;
+  --color-gold-600: #b08d47;
+  --color-gold-500: #c6a15b;
+  --color-gold-400: #d4b478;
+  --color-gold-300: #e3cc85;
+  --color-gold-100: #f6ecd4;
+
+  --color-ink-950: #14171d;
+  --color-ink-900: #1a1d23;
+  --color-ink-700: #2e333d;
+  --color-ink-500: #5b6472;
+  --color-ink-300: #a7b0be;
+  --color-ink-100: #e4e8ee;
+
+  --color-paper: #ffffff;
+  --color-mist: #f4f6f9;
+
+  --color-success-600: #157f3d;
+  --color-success-100: #dcf2e3;
+  --color-warning-600: #a86a12;
+  --color-warning-100: #faecd2;
+  --color-danger-600: #b3261e;
+  --color-danger-100: #f9dcd9;
+  --color-info-600: #1e4179;
+  --color-info-100: #dbe4f2;
+
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, -apple-system,
+    "Segoe UI", Roboto, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo,
+    monospace;
+}
+
+body {
+  background: var(--color-mist);
+  color: var(--color-ink-900);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Visible focus for accessibility */
+:focus-visible {
+  outline: 2px solid var(--color-gold-500);
+  outline-offset: 2px;
+}
+
+/* Respect reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
