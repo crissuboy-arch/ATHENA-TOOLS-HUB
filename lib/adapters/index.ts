@@ -9,6 +9,7 @@
 import "./vectorcraft";
 import "./hyperframes";
 import "./apify-mcp";
+import "./mkvideos";
 
 export { toolRegistry } from "./types";
 export type { ToolContract, ValidationResult, DryRunInfo } from "./types";

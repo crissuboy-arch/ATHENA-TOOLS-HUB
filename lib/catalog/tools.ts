@@ -492,6 +492,42 @@ export const TOOLS: ToolEntry[] = [
     tests: null,
     history: null,
   },
+  {
+    id: "mkvideos",
+    name: "MKVideos",
+    tagline: "Fábrica de vídeos com a aparência e a voz da Cristiane (Ofensiva Criativa)",
+    description:
+      "Pipeline próprio de geração de vídeo vertical/horizontal com avatar e voz clonada da Cristiane. O executor CRIAR_VIDEO vive na Athena (Fase 7); o Hub regista a ferramenta, constrói envelopes de missão (ContratoPonteV1), acompanha jobs por poll (queued/running/done/failed) e exibe os artefactos. Repositório separado, só leitura.",
+    category: "video",
+    repoUrl: "https://github.com/crissuboy-arch/mkvideos-ofensiva-criativa",
+    license: "MIT",
+    state: "cataloged",
+    capabilities: [
+      "Construção de envelopes de missão CRIAR_VIDEO (ContratoPonteV1)",
+      "Acompanhamento de jobs por poll de estados",
+      "Exibição de artefactos (MP4) devolvidos",
+    ],
+    requirements: [
+      "Executor CRIAR_VIDEO na Athena (Fase 7, Cláudio)",
+      "Worker isolado com acesso ao CLI mkivideos (athena-receive/athena-status)",
+    ],
+    dependencies: [],
+    version: null, // versão da ferramenta não especificada — não inventar
+    technicalProfile: {
+      runtime: "TypeScript (Node)",
+      controlChannels: ["CLI", "JSON"],
+      note: "Adapter ContratoPonteV1 em src/athena/adapter.ts (branch feat/athena-mkvideos-adapter).",
+    },
+    io: null, // contrato do adapter em definição — inputs/outputs não especificados
+    executor: null, // executor CRIAR_VIDEO vive na Athena (Fase 7) — não ligado
+    permissions: null,
+    limits: [
+      "publicação real desativada até autorização explícita da Cristiane",
+    ],
+    logs: "execution_events do job correspondente",
+    tests: ["lib/adapters/mkvideos.test.ts"],
+    history: null, // sem execuções reais registadas
+  },
 ];
 
 export function getTool(id: string): ToolEntry | undefined {

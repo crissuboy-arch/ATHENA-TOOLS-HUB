@@ -158,8 +158,8 @@ describe("deriveStateFromSignals — máquina de estados", () => {
 });
 
 describe("resolveToolState / getToolHealth — retrato honesto de hoje", () => {
-  it("as 11 ferramentas do catálogo resolvem para NOT_CONFIGURED sem evidência", () => {
-    expect(TOOLS).toHaveLength(11);
+  it("as 12 ferramentas do catálogo resolvem para NOT_CONFIGURED sem evidência", () => {
+    expect(TOOLS).toHaveLength(12); // 11 originais + mkvideos (FASE 6, registo explícito da missão)
     for (const tool of TOOLS) {
       const h = resolveToolState(tool);
       expect(h.found).toBe(true);
@@ -183,9 +183,16 @@ describe("resolveToolState / getToolHealth — retrato honesto de hoje", () => {
   });
 
   it("adapters 501 expõem a versão do contrato, sem fingir executor", () => {
-    for (const id of ["vectorcraft", "hyperframes", "apify-mcp"]) {
+    // Versões pinadas pela FASE 6 (contratos estendidos); mkvideos nasce em 0.1.0.
+    const expected: Record<string, string> = {
+      vectorcraft: "0.2.0-contract",
+      hyperframes: "0.2.0-contract",
+      "apify-mcp": "0.2.0-contract",
+      mkvideos: "0.1.0-contract",
+    };
+    for (const [id, version] of Object.entries(expected)) {
       const h = getToolHealth(id);
-      expect(h.contractVersion).toBe("0.1.0-contract");
+      expect(h.contractVersion).toBe(version);
       expect(h.signals?.adapterRegistered).toBe(true);
       expect(h.signals?.executionReady).toBe(false);
     }
@@ -248,7 +255,7 @@ describe("TOOLS — facetas FASE 4 completas e honestas", () => {
     }
   });
 
-  it("não foram inventadas ferramentas novas: continuam 11", () => {
+  it("só ferramentas autorizadas no catálogo: 11 originais + mkvideos (FASE 6)", () => {
     expect(TOOLS.map((t) => t.id).sort()).toEqual(
       [
         "apify-mcp",
@@ -257,6 +264,7 @@ describe("TOOLS — facetas FASE 4 completas e honestas", () => {
         "gws-cli",
         "hyperframes",
         "lightcraft",
+        "mkvideos",
         "photocraft",
         "playwright-cli",
         "supabase",
