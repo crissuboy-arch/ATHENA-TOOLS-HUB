@@ -54,7 +54,9 @@ function CatalogContent() {
   const initialCategory = isCategory(searchParams.get("categoria"))
     ? (searchParams.get("categoria") as ToolCategory)
     : "all";
-  const [query, setQuery] = useState("");
+  // The Topbar search navigates here with ?q= — honor it as the initial query.
+  const initialQuery = searchParams.get("q") ?? "";
+  const [query, setQuery] = useState(initialQuery);
   const [category, setCategory] = useState<ToolCategory | "all">(initialCategory);
   const [state, setState] = useState<ToolState | "all">("all");
 

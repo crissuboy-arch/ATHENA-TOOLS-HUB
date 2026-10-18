@@ -35,6 +35,7 @@ import {
 } from "@/components/workflows-ui";
 import { NoOrgState, OrgSelect, useOrg } from "@/components/org";
 import JobStateBadge from "@/components/jobs/JobStateBadge";
+import { t } from "@/lib/i18n";
 
 const PER_PAGE = 20;
 
@@ -144,6 +145,20 @@ export default function JobsClient({ orgs }: { orgs: Org[] }) {
     setPage(1);
   }
 
+  /** Retry after a load error — re-runs the real GET, never invents data. */
+  function retryLoad() {
+    setLoading(true);
+    fetchJobs()
+      .then((data) => {
+        applyJobs(data);
+        setLoading(false);
+      })
+      .catch((err: unknown) => {
+        applyJobsError(err);
+        setLoading(false);
+      });
+  }
+
   const hasActiveFilters = status !== "" || toolId !== "";
 
   if (!ready) return <LoadingState label="Carregando…" />;
@@ -203,9 +218,16 @@ export default function JobsClient({ orgs }: { orgs: Org[] }) {
       </Card>
 
       {error ? (
-        <Alert tone="danger" title="Erro ao carregar">
-          {error}
-        </Alert>
+        <div>
+          <Alert tone="danger" title="Erro ao carregar">
+            {error}
+          </Alert>
+          <div className="mt-3">
+            <Button tone="secondary" onClick={retryLoad}>
+              {t.common.retry}
+            </Button>
+          </div>
+        </div>
       ) : loading ? (
         <LoadingState label="Carregando tarefas…" />
       ) : jobs.length === 0 ? (

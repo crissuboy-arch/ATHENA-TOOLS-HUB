@@ -33,6 +33,7 @@ import {
   PageHeader,
 } from "@/components/workflows-ui";
 import { NoOrgState, OrgSelect, useOrg } from "@/components/org";
+import { t } from "@/lib/i18n";
 
 const RECENT_JOBS = 20;
 
@@ -161,6 +162,20 @@ export default function ResultsClient({ orgs }: { orgs: Org[] }) {
   if (!ready) return <LoadingState label="Carregando…" />;
   if (orgs.length === 0) return <NoOrgState />;
 
+  /** Retry after a load error — re-runs the real GETs, never invents data. */
+  function retryLoad() {
+    setLoading(true);
+    fetchAssets()
+      .then((a) => {
+        applyAssets(a);
+        setLoading(false);
+      })
+      .catch((err: unknown) => {
+        applyAssetsError(err);
+        setLoading(false);
+      });
+  }
+
   return (
     <div>
       <PageHeader
@@ -170,9 +185,16 @@ export default function ResultsClient({ orgs }: { orgs: Org[] }) {
       />
 
       {error ? (
-        <Alert tone="danger" title="Erro ao carregar">
-          {error}
-        </Alert>
+        <div>
+          <Alert tone="danger" title="Erro ao carregar">
+            {error}
+          </Alert>
+          <div className="mt-3">
+            <Button tone="secondary" onClick={retryLoad}>
+              {t.common.retry}
+            </Button>
+          </div>
+        </div>
       ) : loading ? (
         <LoadingState label="Carregando resultados…" />
       ) : sorted.length === 0 ? (

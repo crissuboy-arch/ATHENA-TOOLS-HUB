@@ -33,6 +33,7 @@ import {
   table,
 } from "@/components/workflows-ui";
 import { NoOrgState, OrgSelect, useOrg } from "@/components/org";
+import { t } from "@/lib/i18n";
 
 const PER_PAGE = 20;
 
@@ -201,9 +202,16 @@ export default function ApprovalsClient({ orgs }: { orgs: Org[] }) {
           decisões ficam registradas na auditoria do servidor e na linha do tempo de cada tarefa.
         </Alert>
       ) : error ? (
-        <Alert tone="danger" title="Erro ao carregar">
-          {error}
-        </Alert>
+        <div>
+          <Alert tone="danger" title="Erro ao carregar">
+            {error}
+          </Alert>
+          <div className="mt-3">
+            <Button tone="secondary" onClick={refreshApprovals}>
+              {t.common.retry}
+            </Button>
+          </div>
+        </div>
       ) : loading ? (
         <LoadingState label="Carregando aprovações…" />
       ) : items.length === 0 ? (

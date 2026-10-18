@@ -25,10 +25,12 @@ export function Topbar({ userEmail }: { userEmail?: string | null }) {
   const [notifications, setNotifications] = React.useState<NotificationItem[] | null>(
     null
   );
+  const [notificationsUnavailable, setNotificationsUnavailable] =
+    React.useState(false);
   const [loggingOut, setLoggingOut] = React.useState(false);
 
   // Load notifications honestly: any failure (endpoint missing, offline)
-  // means "no notifications to show", never invented items.
+  // marks the feed as unavailable — it is NOT rendered as "no notifications".
   React.useEffect(() => {
     if (!notifOpen) return;
     let cancelled = false;
@@ -39,9 +41,15 @@ export function Topbar({ userEmail }: { userEmail?: string | null }) {
         const json = await res.json();
         const items: NotificationItem[] =
           json?.data ?? json?.items ?? (Array.isArray(json) ? json : []);
-        if (!cancelled) setNotifications(items.slice(0, 10));
+        if (!cancelled) {
+          setNotifications(items.slice(0, 10));
+          setNotificationsUnavailable(false);
+        }
       } catch {
-        if (!cancelled) setNotifications([]);
+        if (!cancelled) {
+          setNotifications([]);
+          setNotificationsUnavailable(true);
+        }
       }
     })();
     return () => {
@@ -143,6 +151,13 @@ export function Topbar({ userEmail }: { userEmail?: string | null }) {
                     {notifications === null ? (
                       <p className="px-4 py-8 text-center text-sm text-ink-500">
                         {t.common.loading}
+                      </p>
+                    ) : notificationsUnavailable ? (
+                      <p
+                        role="status"
+                        className="px-4 py-8 text-center text-sm text-ink-500"
+                      >
+                        {t.notifications.unavailable}
                       </p>
                     ) : notifications.length === 0 ? (
                       <div className="px-4 py-8 text-center">

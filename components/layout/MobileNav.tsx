@@ -14,7 +14,7 @@ export function MobileNav() {
   return (
     <nav
       aria-label="Navegação móvel"
-      className="lg:hidden fixed bottom-0 inset-x-0 z-40 border-t border-ink-100 bg-paper/95 backdrop-blur supports-[backdrop-filter]:bg-paper/80"
+      className="lg:hidden fixed bottom-0 inset-x-0 z-40 border-t border-ink-100 bg-paper/95 backdrop-blur supports-[backdrop-filter]:bg-paper/80 pb-[env(safe-area-inset-bottom)]"
     >
       <ul className="grid grid-cols-5">
         {mobileNavItems.map((item) => {

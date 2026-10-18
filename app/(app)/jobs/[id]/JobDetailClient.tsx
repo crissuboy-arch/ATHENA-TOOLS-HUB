@@ -39,6 +39,7 @@ import {
 import { NoOrgState, OrgSelect, useOrg } from "@/components/org";
 import JobStateBadge from "@/components/jobs/JobStateBadge";
 import JobTimeline from "@/components/jobs/JobTimeline";
+import { t } from "@/lib/i18n";
 
 export default function JobDetailClient({
   id,
@@ -161,8 +162,20 @@ export default function JobDetailClient({
     }
   }
 
-  async function retryJob() {
-    if (!job || !orgId) return;
+  /** Retry after a load error — re-runs the real GETs, never invents data. */
+  async function reloadDetail() {
+    if (!orgId) return;
+    setLoading(true);
+    try {
+      applyDetail(await fetchDetail());
+    } catch (err) {
+      applyDetailError(err);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function retryJob() {    if (!job || !orgId) return;
     setActionBusy(true);
     setActionError(null);
     try {
@@ -228,6 +241,11 @@ export default function JobDetailClient({
         <Alert tone="danger" title="Erro ao carregar">
           {error ?? "Tarefa indisponível."}
         </Alert>
+        <div className="mt-3">
+          <Button tone="secondary" onClick={reloadDetail}>
+            {t.common.retry}
+          </Button>
+        </div>
       </div>
     );
   }

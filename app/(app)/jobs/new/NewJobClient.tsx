@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { z } from "zod";
@@ -34,6 +34,7 @@ import {
   JsonViewer,
 } from "@/components/workflows-ui";
 import { NoOrgState, OrgSelect, useOrg } from "@/components/org";
+import { t } from "@/lib/i18n";
 
 const paramsObjectSchema = z.record(z.string(), z.unknown());
 
@@ -87,19 +88,44 @@ export default function NewJobClient({ orgs }: { orgs: Org[] }) {
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
-  useEffect(() => {
-    apiGet<{ tools: Tool[] }>("/tools")
-      .then((body) => setTools(body.tools ?? []))
-      .catch((err: unknown) => {
-        setToolsError(
-          isDbNotConfigured(err)
-            ? DB_NOT_CONFIGURED_MESSAGE
-            : err instanceof ApiError
-              ? err.message
-              : "Não foi possível carregar o catálogo de ferramentas.",
-        );
-      });
+  // Pure data fetch (no setState inside): safe to call from effects via
+  // .then() callbacks (React 19 lint rule) and from event handlers.
+  const fetchTools = useCallback(async (): Promise<Tool[]> => {
+    const body = await apiGet<{ tools: Tool[] }>("/tools");
+    return body.tools ?? [];
   }, []);
+
+  function toolsLoadErrorMessage(err: unknown): string {
+    return isDbNotConfigured(err)
+      ? DB_NOT_CONFIGURED_MESSAGE
+      : err instanceof ApiError
+        ? err.message
+        : "Não foi possível carregar o catálogo de ferramentas.";
+  }
+
+  // Retry after a load error — re-runs the real GET, never invents data.
+  // Event handler: synchronous setState is allowed here.
+  const reloadTools = useCallback(() => {
+    setToolsError(null);
+    setTools(null);
+    fetchTools()
+      .then((t) => setTools(t))
+      .catch((err: unknown) => setToolsError(toolsLoadErrorMessage(err)));
+  }, [fetchTools]);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchTools()
+      .then((t) => {
+        if (!cancelled) setTools(t);
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) setToolsError(toolsLoadErrorMessage(err));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [fetchTools]);
 
   const selectedTool: Tool | undefined = useMemo(
     () => tools?.find((t) => t.id === selectedToolId),
@@ -247,9 +273,16 @@ export default function NewJobClient({ orgs }: { orgs: Org[] }) {
       {step === 1 && (
         <div>
           {toolsError ? (
-            <Alert tone="danger" title="Erro ao carregar ferramentas">
-              {toolsError}
-            </Alert>
+            <div>
+              <Alert tone="danger" title="Erro ao carregar ferramentas">
+                {toolsError}
+              </Alert>
+              <div className="mt-3">
+                <Button tone="secondary" onClick={reloadTools}>
+                  {t.common.retry}
+                </Button>
+              </div>
+            </div>
           ) : tools === null ? (
             <LoadingState label="Carregando ferramentas…" />
           ) : tools.length === 0 ? (

@@ -11,89 +11,20 @@ import {
   EmptyState,
   EmptyIcon,
   Spinner,
+  Button,
 } from "@/components/ui";
 import { t } from "@/lib/i18n";
+import {
+  useApiList,
+  type ApiListState,
+  type ApiRecord,
+} from "@/components/api";
 
 /**
  * Dashboard — fed ONLY by real GET requests to /api/v1/*.
- *
- * Expected API shapes (implemented by the API agent): an array, or an
- * object with { data } / { items } / { results } plus optional
- * { total } / { count }. Anything else is treated as "no data", never
- * invented.
+ * Response parsing + retry live in @/components/api; anything the API
+ * doesn't return is "no data", never invented.
  */
-
-type ApiRecord = Record<string, unknown>;
-
-interface ApiState {
-  items: ApiRecord[];
-  total: number | null;
-  loading: boolean;
-  error: boolean;
-}
-
-function parseList(json: unknown): ApiRecord[] {
-  if (Array.isArray(json)) return json as ApiRecord[];
-  if (json && typeof json === "object") {
-    const obj = json as Record<string, unknown>;
-    for (const key of ["data", "items", "results"]) {
-      if (Array.isArray(obj[key])) return obj[key] as ApiRecord[];
-    }
-  }
-  return [];
-}
-
-function parseTotal(json: unknown, items: ApiRecord[]): number | null {
-  if (json && typeof json === "object") {
-    const obj = json as Record<string, unknown>;
-    for (const key of ["total", "count"]) {
-      if (typeof obj[key] === "number") return obj[key] as number;
-    }
-  }
-  return items.length;
-}
-
-function useApiList(url: string): ApiState {
-  const [state, setState] = React.useState<ApiState>({
-    items: [],
-    total: null,
-    loading: true,
-    error: false,
-  });
-
-  // No synchronous setState in the effect body (React 19 lint rule):
-  // every setState below happens after an `await`, inside the async
-  // continuation. Initial useState({ loading: true }) covers first paint;
-  // `url` never changes for these dashboard tiles.
-  React.useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const res = await fetch(url);
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const json = await res.json();
-        const items = parseList(json);
-        if (!cancelled) {
-          setState({
-            items,
-            total: parseTotal(json, items),
-            loading: false,
-            error: false,
-          });
-        }
-      } catch {
-        if (!cancelled) {
-          setState({ items: [], total: null, loading: false, error: true });
-        }
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [url]);
-
-  return state;
-}
 
 const str = (row: ApiRecord, ...keys: string[]): string => {
   for (const key of keys) {
@@ -127,12 +58,14 @@ function Section({
   href,
   loading,
   error,
+  onRetry,
   children,
 }: {
   title: string;
   href: string;
   loading: boolean;
   error: boolean;
+  onRetry: () => void;
   children: React.ReactNode;
 }) {
   return (
@@ -151,9 +84,12 @@ function Section({
           <Spinner size="sm" /> {t.common.loading}
         </div>
       ) : error ? (
-        <p role="alert" className="py-6 text-center text-sm text-danger-600">
-          {t.dashboard.loadError}
-        </p>
+        <div role="alert" className="py-6 text-center">
+          <p className="text-sm text-danger-600">{t.dashboard.loadError}</p>
+          <Button variant="ghost" size="sm" onClick={onRetry} className="mt-3">
+            {t.common.retry}
+          </Button>
+        </div>
       ) : (
         children
       )}
@@ -163,8 +99,9 @@ function Section({
 
 function JobRow({ row }: { row: ApiRecord }) {
   const state = String(row.status ?? row.state ?? "created");
-  return (
-    <li className="flex items-center justify-between gap-3 border-b border-ink-100 py-3 last:border-0">
+  const id = row.id !== null && row.id !== undefined ? String(row.id) : null;
+  const body = (
+    <>
       <div className="min-w-0">
         <p className="truncate text-sm font-medium text-ink-900">
           {str(row, "name", "title", "tool_name")}
@@ -174,6 +111,21 @@ function JobRow({ row }: { row: ApiRecord }) {
         </p>
       </div>
       <StateBadge kind="job" state={state} />
+    </>
+  );
+  return (
+    <li className="border-b border-ink-100 last:border-0">
+      {id ? (
+        <Link
+          href={`/jobs/${encodeURIComponent(id)}`}
+          className="flex items-center justify-between gap-3 py-3 transition-colors hover:bg-mist"
+          aria-label={`Abrir tarefa ${id}`}
+        >
+          {body}
+        </Link>
+      ) : (
+        <div className="flex items-center justify-between gap-3 py-3">{body}</div>
+      )}
     </li>
   );
 }
@@ -195,7 +147,7 @@ export default function DashboardPage() {
     (i) => String(i.status ?? i.state ?? "") === "connected"
   );
 
-  const statProps = (api: ApiState, count: number) => ({
+  const statProps = (api: ApiListState, count: number) => ({
     loading: api.loading,
     error: api.error,
     value: api.loading || api.error ? undefined : count,
@@ -287,6 +239,7 @@ export default function DashboardPage() {
           href="/jobs"
           loading={jobs.loading}
           error={jobs.error}
+          onRetry={jobs.reload}
         >
           {jobs.items.length === 0 ? (
             <EmptyState icon={<EmptyIcon />} title={t.dashboard.emptyJobs} />
@@ -304,6 +257,7 @@ export default function DashboardPage() {
           href="/jobs"
           loading={jobs.loading}
           error={jobs.error}
+          onRetry={jobs.reload}
         >
           {activeJobs.length === 0 ? (
             <EmptyState icon={<EmptyIcon />} title={t.dashboard.emptyJobs} />
@@ -321,6 +275,7 @@ export default function DashboardPage() {
           href="/approvals"
           loading={approvals.loading}
           error={approvals.error}
+          onRetry={approvals.reload}
         >
           {pendingApprovals.length === 0 ? (
             <EmptyState icon={<EmptyIcon />} title={t.dashboard.emptyApprovals} />
@@ -351,6 +306,7 @@ export default function DashboardPage() {
           href="/results"
           loading={results.loading}
           error={results.error}
+          onRetry={results.reload}
         >
           {results.items.length === 0 ? (
             <EmptyState icon={<EmptyIcon />} title={t.dashboard.emptyResults} />
