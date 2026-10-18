@@ -12,6 +12,12 @@
  * - storytold/artcraftx is NOT a registry tool: no license could be verified
  *   (no license file in the repo, GitHub reports no license). Do not adapt.
  * See docs/CATALOG_LICENSES.md for the full verification table.
+ *
+ * FASE 4 — cada ferramenta expõe facetas honestas (version, technicalProfile,
+ * io, executor, permissions, limits, logs, tests, history). null = não
+ * especificado / desconhecido — nunca inventado. O estado autoritativo da
+ * ferramenta é derivado por lib/catalog/health.ts (ToolHealthState); o campo
+ * `state` legado é mantido para a UI existente.
  */
 
 import type { ToolCategory, ToolEntry } from "./types";
@@ -40,6 +46,35 @@ export const TOOLS: ToolEntry[] = [
       "Ambiente isolado para executar o servidor MCP/CLI (fora do frontend)",
     ],
     dependencies: [],
+    version: null, // versão da ferramenta não especificada — não inventar
+    technicalProfile: {
+      runtime: "Rust",
+      controlChannels: ["MCP", "CLI", "JSON"],
+      note: "Reimplementação clean-room do Adobe Illustrator em Rust puro (equipe ArtCraft).",
+    },
+    // Inputs transcritos do contrato real do adapter (lib/adapters/vectorcraft.ts).
+    io: {
+      inputs: [
+        { name: "prompt", type: "string", required: true, note: "1–4000 caracteres" },
+        { name: "width", type: "number (int)", required: false, note: "16–4096" },
+        { name: "height", type: "number (int)", required: false, note: "16–4096" },
+        { name: "style", type: "string", required: false, note: "máx. 120 caracteres" },
+      ],
+      outputs: null, // executor pendente — outputs não especificados
+    },
+    executor: null, // nenhum executor real conectado
+    permissions: null,
+    limits: [
+      "prompt: 1–4000 caracteres",
+      "width/height: 16–4096 px",
+      "executor real pendente — nenhuma execução disponível",
+    ],
+    logs: null, // não especificado — nenhuma execução real registrada
+    tests: [
+      "lib/adapters/vectorcraft.test.ts — contrato (validação de params + dry-run)",
+      "execução real: não testada",
+    ],
+    history: null, // sem histórico de execução real
   },
   {
     id: "designcraft",
@@ -63,6 +98,19 @@ export const TOOLS: ToolEntry[] = [
       "Ambiente isolado para executar o servidor MCP/CLI (fora do frontend)",
     ],
     dependencies: [],
+    version: null,
+    technicalProfile: {
+      runtime: "Rust",
+      controlChannels: ["MCP", "CLI", "JSON"],
+      note: "Reimplementação clean-room do Adobe InDesign em Rust puro; estágio pré-alfa segundo o roadmap do repositório.",
+    },
+    io: null, // sem contrato de adapter — inputs/outputs não especificados
+    executor: null,
+    permissions: null,
+    limits: null,
+    logs: null,
+    tests: null,
+    history: null,
   },
   {
     id: "photocraft",
@@ -86,6 +134,19 @@ export const TOOLS: ToolEntry[] = [
       "Ambiente isolado para executar o servidor MCP/CLI (fora do frontend)",
     ],
     dependencies: [],
+    version: null,
+    technicalProfile: {
+      runtime: "Rust",
+      controlChannels: ["UI", "CLI", "JSON", "MCP"],
+      note: "Editor de fotos em Rust puro; lê e escreve arquivos PSD reais com camadas. Estágio alfa inicial.",
+    },
+    io: null,
+    executor: null,
+    permissions: null,
+    limits: null,
+    logs: null,
+    tests: null,
+    history: null,
   },
   {
     id: "lightcraft",
@@ -109,6 +170,19 @@ export const TOOLS: ToolEntry[] = [
       "Ambiente isolado para executar o servidor MCP/CLI (fora do frontend)",
     ],
     dependencies: [],
+    version: null,
+    technicalProfile: {
+      runtime: "Rust",
+      controlChannels: ["CLI", "MCP"],
+      note: "Revelador RAW e biblioteca não-destrutiva em Rust puro; pipeline de 32 bits float.",
+    },
+    io: null,
+    executor: null,
+    permissions: null,
+    limits: null,
+    logs: null,
+    tests: null,
+    history: null,
   },
   {
     id: "artcraft",
@@ -134,6 +208,22 @@ export const TOOLS: ToolEntry[] = [
       "Aplicativo desktop (builds oficiais para Windows/macOS; Linux via compilação)",
     ],
     dependencies: [],
+    version: null,
+    technicalProfile: {
+      runtime: "Aplicativo desktop",
+      controlChannels: ["app desktop"],
+      note: "IDE de criação com IA; geração de imagem/vídeo usa provedores externos (contas e custos separados). Código do app sob licença dupla MIT/Apache-2.0.",
+    },
+    io: null,
+    executor: null,
+    permissions: null,
+    limits: [
+      "geração de imagem/vídeo via provedores externos — contas e custos separados",
+      "aprovação de custo prévia obrigatória antes de qualquer uso pago",
+    ],
+    logs: null,
+    tests: null,
+    history: null,
   },
   {
     id: "wordcraft",
@@ -157,6 +247,19 @@ export const TOOLS: ToolEntry[] = [
       "Ambiente isolado para executar o servidor MCP/CLI (fora do frontend)",
     ],
     dependencies: [],
+    version: null,
+    technicalProfile: {
+      runtime: "Rust",
+      controlChannels: ["MCP", "CLI"],
+      note: "Reimplementação clean-room do Microsoft Word em Rust puro; lê/escreve .docx (OOXML). Estágio alfa.",
+    },
+    io: null,
+    executor: null,
+    permissions: null,
+    limits: null,
+    logs: null,
+    tests: null,
+    history: null,
   },
   {
     id: "hyperframes",
@@ -181,6 +284,41 @@ export const TOOLS: ToolEntry[] = [
       "Ambiente isolado para o renderer (fora do frontend)",
     ],
     dependencies: [],
+    version: null,
+    technicalProfile: {
+      runtime: "Node.js 22+",
+      controlChannels: ["CLI"],
+      note: "Framework open-source da HeyGen: compõe MP4 determinístico a partir de HTML/CSS — NÃO gera avatares de IA nativamente.",
+    },
+    // Inputs transcritos do contrato real do adapter (lib/adapters/hyperframes.ts).
+    io: {
+      inputs: [
+        { name: "model", type: "string", required: true, note: "máx. 120 caracteres" },
+        { name: "format", type: "enum", required: true, note: "9:16 | 1:1 | 16:9" },
+        { name: "text", type: "string", required: true, note: "texto/roteiro, 1–20000 caracteres" },
+        { name: "assets", type: "string[] (URLs)", required: false, note: "máx. 20" },
+        { name: "durationSeconds", type: "number (int)", required: false, note: "1–3600" },
+      ],
+      outputs: null, // executor pendente — outputs não especificados
+    },
+    executor: null,
+    permissions: [
+      "Renderizar composições HTML em MP4 no executor configurado",
+      "Ler status e resultados de renders",
+    ],
+    limits: [
+      "format: 9:16 | 1:1 | 16:9",
+      "assets: até 20 URLs",
+      "durationSeconds: 1–3600",
+      "renderização em nuvem tem custo — aprovação prévia da Cristiane",
+      "executor real pendente — nenhuma execução disponível",
+    ],
+    logs: null,
+    tests: [
+      "lib/adapters/hyperframes.test.ts — contrato (validação de params + dry-run)",
+      "execução real: não testada",
+    ],
+    history: null,
   },
   {
     id: "apify-mcp",
@@ -204,6 +342,40 @@ export const TOOLS: ToolEntry[] = [
       "Autorização da Cristiane antes de qualquer execução paga",
     ],
     dependencies: [],
+    version: null,
+    technicalProfile: {
+      runtime: "Servidor MCP",
+      controlChannels: ["MCP"],
+      note: "Servidor MCP oficial da Apify. A integração Apify existente via ScalaFlow NÃO é tocada por este Hub.",
+    },
+    // Inputs transcritos do contrato real do adapter (lib/adapters/apify-mcp.ts).
+    io: {
+      inputs: [
+        { name: "actor", type: "string", required: true, note: "Actor permitido, máx. 200 caracteres" },
+        { name: "params", type: "record<string, unknown>", required: false, note: "padrão: {}" },
+        { name: "maxCostCents", type: "number (int)", required: true, note: "teto de gasto obrigatório, ≥ 1" },
+      ],
+      outputs: null, // executor pendente — outputs não especificados
+    },
+    executor: null,
+    permissions: [
+      "Executar Actors da Apify Store dentro do teto de orçamento",
+      "Ler resultados e status de execuções",
+      "Consultar uso e custos da conta",
+    ],
+    limits: [
+      "maxCostCents ≥ 1 obrigatório — sem teto, a execução nem é validada",
+      "usar somente a conta existente — não criar nova conta",
+      "não tocar na integração Apify existente via ScalaFlow",
+      "autorização da Cristiane antes de qualquer execução paga",
+      "executor MCP isolado pendente — nenhuma execução disponível",
+    ],
+    logs: null,
+    tests: [
+      "lib/adapters/apify-mcp.test.ts — contrato (validação de params + dry-run)",
+      "execução real: não testada",
+    ],
+    history: null,
   },
   {
     id: "playwright-cli",
@@ -225,6 +397,19 @@ export const TOOLS: ToolEntry[] = [
       "Ambiente isolado para execução (fora do frontend)",
     ],
     dependencies: [],
+    version: null,
+    technicalProfile: {
+      runtime: "Node.js",
+      controlChannels: ["CLI"],
+      note: "CLI oficial da Microsoft sobre o Playwright para agentes de IA.",
+    },
+    io: null,
+    executor: null,
+    permissions: null,
+    limits: null,
+    logs: null,
+    tests: null,
+    history: null,
   },
   {
     id: "gws-cli",
@@ -247,6 +432,25 @@ export const TOOLS: ToolEntry[] = [
       "Aprovação da Cristiane para ações de escrita",
     ],
     dependencies: [],
+    version: null,
+    technicalProfile: {
+      runtime: null, // não especificado — não inventar
+      controlChannels: ["CLI"],
+      note: "CLI a partir do Google Discovery Service, com skills para agentes. NÃO é produto oficial do Google — projeto da equipe de desenvolvedores, pré-v1.0.",
+    },
+    io: null,
+    executor: null,
+    permissions: [
+      "Ler Drive, Gmail e Calendar conforme os escopos configurados",
+      "Escrever somente nos escopos aprovados pela Cristiane",
+    ],
+    limits: [
+      "autenticação OAuth exige projeto no Google Cloud com credenciais",
+      "escopos de escrita exigem aprovação explícita da Cristiane",
+    ],
+    logs: null,
+    tests: null,
+    history: null,
   },
   {
     id: "supabase",
@@ -267,6 +471,26 @@ export const TOOLS: ToolEntry[] = [
       "Isolamento total em relação a bancos de outros produtos",
     ],
     dependencies: [],
+    version: null,
+    technicalProfile: {
+      runtime: "Postgres gerenciado (SaaS)",
+      controlChannels: ["API"],
+      note: "Plataforma backend open-source sobre Postgres (banco, autenticação, storage).",
+    },
+    io: null,
+    executor: null,
+    permissions: [
+      "Leitura e escrita no banco do projeto dedicado",
+      "Gerenciar autenticação de usuários",
+      "Gerenciar arquivos no storage",
+    ],
+    limits: [
+      "não criar nem conectar projeto sem a Cristiane confirmar o projeto dedicado ao Tools Hub",
+      "nunca reutilizar o banco de outro produto sem isolamento total e autorização expressa",
+    ],
+    logs: null,
+    tests: null,
+    history: null,
   },
 ];
 
