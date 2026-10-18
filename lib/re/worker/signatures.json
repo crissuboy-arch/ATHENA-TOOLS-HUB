@@ -1,0 +1,227 @@
+[
+  {
+    "extensions": [
+      "zip",
+      "apk",
+      "jar"
+    ],
+    "kind": "zip",
+    "magicHex": "504b03",
+    "mime": "application/zip",
+    "note": "PK\\x03 (local file header); cobre ZIP/APK/JAR",
+    "offset": 0
+  },
+  {
+    "extensions": [
+      "gz",
+      "tgz"
+    ],
+    "kind": "gzip",
+    "magicHex": "1f8b",
+    "mime": "application/gzip",
+    "offset": 0
+  },
+  {
+    "extensions": [
+      "tar"
+    ],
+    "kind": "tar",
+    "magicHex": "7573746172",
+    "mime": "application/x-tar",
+    "note": "\"ustar\" no offset 257",
+    "offset": 257
+  },
+  {
+    "extensions": [
+      "pdf"
+    ],
+    "kind": "pdf",
+    "magicHex": "25504446",
+    "mime": "application/pdf",
+    "note": "%PDF",
+    "offset": 0
+  },
+  {
+    "extensions": [
+      "png"
+    ],
+    "kind": "png",
+    "magicHex": "89504e470d0a1a0a",
+    "mime": "image/png",
+    "offset": 0
+  },
+  {
+    "extensions": [
+      "jpg",
+      "jpeg"
+    ],
+    "kind": "jpeg",
+    "magicHex": "ffd8ff",
+    "mime": "image/jpeg",
+    "offset": 0
+  },
+  {
+    "extensions": [
+      "gif"
+    ],
+    "kind": "gif",
+    "magicHex": "47494638",
+    "mime": "image/gif",
+    "note": "GIF8",
+    "offset": 0
+  },
+  {
+    "extensions": [
+      "elf",
+      "so",
+      "bin",
+      "o"
+    ],
+    "kind": "elf",
+    "magicHex": "7f454c46",
+    "mime": "application/x-elf",
+    "offset": 0
+  },
+  {
+    "extensions": [
+      "exe",
+      "dll",
+      "sys"
+    ],
+    "kind": "pe",
+    "magicHex": "4d5a",
+    "mime": "application/x-msdownload",
+    "note": "MZ (DOS/PE)",
+    "offset": 0
+  },
+  {
+    "extensions": [
+      "dylib",
+      "macho",
+      "o"
+    ],
+    "kind": "macho",
+    "magicHex": "cafebabe",
+    "mime": "application/x-mach-binary",
+    "note": "Mach-O fat/big-endian",
+    "offset": 0
+  },
+  {
+    "extensions": [
+      "dylib",
+      "macho",
+      "o"
+    ],
+    "kind": "macho",
+    "magicHex": "feedface",
+    "mime": "application/x-mach-binary",
+    "note": "Mach-O 32-bit BE",
+    "offset": 0
+  },
+  {
+    "extensions": [
+      "dylib",
+      "macho",
+      "o"
+    ],
+    "kind": "macho",
+    "magicHex": "feedfacf",
+    "mime": "application/x-mach-binary",
+    "note": "Mach-O 64-bit BE",
+    "offset": 0
+  },
+  {
+    "extensions": [
+      "dylib",
+      "macho",
+      "o"
+    ],
+    "kind": "macho",
+    "magicHex": "cefaedfe",
+    "mime": "application/x-mach-binary",
+    "note": "Mach-O 32-bit LE",
+    "offset": 0
+  },
+  {
+    "extensions": [
+      "dylib",
+      "macho",
+      "o"
+    ],
+    "kind": "macho",
+    "magicHex": "cffaedfe",
+    "mime": "application/x-mach-binary",
+    "note": "Mach-O 64-bit LE",
+    "offset": 0
+  },
+  {
+    "extensions": [
+      "wasm"
+    ],
+    "kind": "wasm",
+    "magicHex": "0061736d",
+    "mime": "application/wasm",
+    "note": "\\0asm",
+    "offset": 0
+  },
+  {
+    "extensions": [
+      "sqlite",
+      "db",
+      "sqlite3"
+    ],
+    "kind": "sqlite",
+    "magicHex": "53514c69746520666f726d6174203300",
+    "mime": "application/x-sqlite3",
+    "note": "\"SQLite format 3\\0\"",
+    "offset": 0
+  },
+  {
+    "extensions": [
+      "json"
+    ],
+    "kind": "json",
+    "mime": "application/json",
+    "sniff": "json"
+  },
+  {
+    "extensions": [
+      "xml",
+      "svg"
+    ],
+    "kind": "xml",
+    "mime": "application/xml",
+    "sniff": "xml"
+  },
+  {
+    "extensions": [
+      "html",
+      "htm"
+    ],
+    "kind": "html",
+    "mime": "text/html",
+    "sniff": "html"
+  },
+  {
+    "extensions": [
+      "txt",
+      "log",
+      "md",
+      "csv"
+    ],
+    "kind": "text",
+    "mime": "text/plain",
+    "sniff": "text"
+  },
+  {
+    "extensions": [
+      "js",
+      "mjs",
+      "cjs"
+    ],
+    "kind": "javascript",
+    "mime": "text/javascript",
+    "note": "texto com extens\u00e3o .js/.mjs/.cjs",
+    "sniff": "text"
+  }
+]
