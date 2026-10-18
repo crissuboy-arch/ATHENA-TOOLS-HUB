@@ -13,6 +13,10 @@
  *   COMPLETED        resultado final disponível
  *   FAILED           falha definitiva (com motivo registrado em events)
  *   CANCELLED        cancelado por usuário ou por rejeição em aprovação
+ *
+ * FASE 3 (motor de execução): RUNNING → QUEUED existe exclusivamente para
+ * recuperação de jobs órfãos (worker caiu sem heartbeat). Nunca é usada no
+ * fluxo normal de execução.
  */
 
 export type JobStatus =
@@ -55,7 +59,10 @@ const TRANSITIONS: Record<JobStatus, readonly JobStatus[]> = {
   VALIDATING: ["PENDING_APPROVAL", "QUEUED", "FAILED", "CANCELLED"],
   PENDING_APPROVAL: ["QUEUED", "CANCELLED"],
   QUEUED: ["RUNNING", "FAILED", "CANCELLED"],
-  RUNNING: ["COMPLETED", "FAILED", "CANCELLED"],
+  // FASE 3: recuperação de órfão — o worker caiu sem heartbeat e o job volta
+  // à fila (ou vai para FAILED se o orçamento de retries esgotou). Ver
+  // lib/jobs/heartbeat.ts (recoverStaleJobs). Não faz parte do fluxo normal.
+  RUNNING: ["COMPLETED", "FAILED", "CANCELLED", "QUEUED"],
   COMPLETED: [],
   FAILED: [],
   CANCELLED: [],

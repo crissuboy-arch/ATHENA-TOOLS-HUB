@@ -49,7 +49,8 @@ describe("job state machine", () => {
     expect(canTransition("COMPLETED", "CANCELLED")).toBe(false);
     expect(canTransition("FAILED", "QUEUED")).toBe(false);
     expect(canTransition("CANCELLED", "RUNNING")).toBe(false);
-    expect(canTransition("RUNNING", "QUEUED")).toBe(false);
+    // FASE 3: RUNNING → QUEUED passou a ser legal (recuperação de órfãos) —
+    // ver o bloco "FASE 3" no fim deste ficheiro.
   });
 
   it("estados terminais não têm saída", () => {
@@ -112,5 +113,18 @@ describe("job state machine (exaustivo)", () => {
   it("aprovação nunca é pulada de volta (PENDING_APPROVAL não volta a VALIDATING)", () => {
     expect(canTransition("PENDING_APPROVAL", "VALIDATING")).toBe(false);
     expect(canTransition("PENDING_APPROVAL", "FAILED")).toBe(false);
+  });
+
+  // FASE 3 (motor de execução): requeue exclusivo de recuperação de órfãos.
+  it("permite RUNNING → QUEUED (recuperação de órfão)", () => {
+    expect(canTransition("RUNNING", "QUEUED")).toBe(true);
+    expect(nextStates("RUNNING")).toContain("QUEUED");
+  });
+
+  it("requeue não abre atalhos: terminais continuam sem saída", () => {
+    expect(canTransition("COMPLETED", "QUEUED")).toBe(false);
+    expect(canTransition("FAILED", "QUEUED")).toBe(false);
+    expect(canTransition("CANCELLED", "QUEUED")).toBe(false);
+    expect(canTransition("QUEUED", "QUEUED")).toBe(false);
   });
 });

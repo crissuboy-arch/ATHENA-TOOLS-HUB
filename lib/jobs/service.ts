@@ -59,6 +59,8 @@ export interface JobDTO {
   result: unknown;
   /** 'ready' só quando um executor real está conectado (adapter.executionReady). */
   integrationStatus: IntegrationStatus;
+  /** FASE 3: início da execução atual (null antes do primeiro claim). */
+  startedAt: string | null;
 }
 
 export interface JobEventDTO {
@@ -108,6 +110,7 @@ function toJobDTO(row: Record<string, unknown>): JobDTO {
     errorMessage: err?.message ?? null,
     result: row.result ?? null,
     integrationStatus: integrationStatusFor(toolSlug),
+    startedAt: row.started_at ? String(row.started_at) : null,
   };
 }
 
@@ -129,6 +132,7 @@ async function writeEvent(input: {
   jobId: string;
   orgId: string;
   type: string;
+  message?: string | null;
   fromStatus?: JobStatus | null;
   toStatus?: JobStatus | null;
   payload?: Record<string, unknown>;
@@ -140,9 +144,10 @@ async function writeEvent(input: {
     org_id: input.orgId,
     type: input.type,
     message:
-      input.fromStatus || input.toStatus
+      input.message ??
+      (input.fromStatus || input.toStatus
         ? `${input.fromStatus ?? "?"} → ${input.toStatus ?? "?"}`
-        : null,
+        : null),
     // execution_events has no dedicated from/to/actor columns; they travel
     // inside payload so the timeline stays queryable without schema drift.
     payload: {
@@ -325,7 +330,21 @@ export async function applyTransition(
   orgId: string,
   to: JobStatus,
   actor: Actor,
-  opts: { note?: string; errorMessage?: string } = {},
+  opts: {
+    note?: string;
+    errorMessage?: string;
+    // FASE 3: campos opcionais para o motor de execução (retrocompatíveis).
+    /** Erro estruturado { code, message, details?, dead_lettered? }. */
+    error?: Record<string, unknown>;
+    /** Resultado final (só faz sentido em COMPLETED). */
+    result?: unknown;
+    /** Marca finished_at (COMPLETED/FAILED). */
+    finishedAt?: string | null;
+    /** Ajusta started_at (claim/requeue). null = limpa. */
+    startedAt?: string | null;
+    /** Progresso 0..100. */
+    progress?: number;
+  } = {},
 ): Promise<JobDTO> {
   assertConfigured();
   const row = await loadJobRow(jobId, orgId);
@@ -339,14 +358,18 @@ export async function applyTransition(
   }
 
   const supabase = getSupabaseAdmin();
+  const errorPayload =
+    opts.error ?? (opts.errorMessage !== undefined ? { message: opts.errorMessage } : undefined);
   const { error } = await supabase
     .from("execution_jobs")
     .update({
       state: to,
       updated_at: new Date().toISOString(),
-      ...(opts.errorMessage !== undefined
-        ? { error: { message: opts.errorMessage } }
-        : {}),
+      ...(errorPayload !== undefined ? { error: errorPayload } : {}),
+      ...(opts.result !== undefined ? { result: opts.result } : {}),
+      ...(opts.finishedAt !== undefined ? { finished_at: opts.finishedAt } : {}),
+      ...(opts.startedAt !== undefined ? { started_at: opts.startedAt } : {}),
+      ...(opts.progress !== undefined ? { progress: opts.progress } : {}),
     })
     .eq("id", jobId)
     .eq("org_id", orgId);
@@ -510,6 +533,239 @@ export async function getJobAssets(
           ? null
           : Number(row.size_bytes),
       metadata: row.metadata ?? null,
+      createdAt: String(row.created_at),
+    };
+  });
+}
+
+// ===========================================================================
+// FASE 3 — motor de execução real: primitivas de persistência do worker.
+// Adições (não alteram comportamento existente): claiming atómico, eventos
+// genéricos (heartbeat/tentativas/dead-letter), conclusão/falha/requeue e
+// leituras para recuperação de órfãos. Toda mutação de estado continua a
+// passar por applyTransition (máquina de estados + evento + auditoria).
+// ===========================================================================
+
+/** Actor padrão das ações do worker (sistema). type api_key: o id do worker fica no diff. */
+export function workerActor(workerId: string): Actor {
+  return { id: `worker:${workerId}`, type: "api_key" };
+}
+
+/** Escreve um evento genérico na timeline do job (heartbeat, tentativa, dead-letter…). */
+export async function appendJobEvent(
+  jobId: string,
+  orgId: string,
+  type: string,
+  message: string | null,
+  payload: Record<string, unknown>,
+  actor: Actor,
+): Promise<void> {
+  assertConfigured();
+  await loadJobRow(jobId, orgId); // garante escopo + existência
+  await writeEvent({ jobId, orgId, type, message, payload, actor });
+}
+
+/**
+ * Claiming ATÓMICO: QUEUED → RUNNING só se o job ainda estiver QUEUED
+ * (update condicional; dois workers a disputar o mesmo job → só um vence).
+ * Devolve false quando outro worker já o reclamou/cancelou.
+ */
+export async function claimJob(
+  jobId: string,
+  orgId: string,
+  workerId: string,
+): Promise<boolean> {
+  assertConfigured();
+  const actor = workerActor(workerId);
+  await loadJobRow(jobId, orgId); // 404 se não existir / fora da org
+  const supabase = getSupabaseAdmin();
+  const now = new Date().toISOString();
+  const { data, error } = await supabase
+    .from("execution_jobs")
+    .update({ state: "RUNNING", started_at: now, updated_at: now })
+    .eq("id", jobId)
+    .eq("org_id", orgId)
+    .eq("state", "QUEUED")
+    .select("id");
+  if (error) throw new HubError("INTERNAL", "Falha ao reclamar o job.", 500);
+  const claimed = (data?.length ?? 0) > 0;
+  if (!claimed) return false;
+  await writeEvent({
+    jobId,
+    orgId,
+    type: "execution_started",
+    message: `job reclamado pelo worker ${workerId}`,
+    fromStatus: "QUEUED",
+    toStatus: "RUNNING",
+    payload: { worker_id: workerId },
+    actor,
+  });
+  await writeAudit({
+    orgId,
+    actor,
+    action: "job.claimed",
+    resourceType: "job",
+    resourceId: jobId,
+    detail: { worker_id: workerId },
+  });
+  return true;
+}
+
+/** Jobs QUEUED (candidatos a dispatch), mais antigos primeiro. */
+export async function listQueuedJobs(orgId: string, limit: number): Promise<JobDTO[]> {
+  assertConfigured();
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("execution_jobs")
+    .select("*")
+    .eq("org_id", orgId)
+    .eq("state", "QUEUED")
+    .order("created_at", { ascending: true })
+    .limit(limit);
+  if (error) throw new HubError("INTERNAL", "Falha ao listar jobs na fila.", 500);
+  return (data ?? []).map((r) => toJobDTO(r as Record<string, unknown>));
+}
+
+/** Jobs RUNNING (para recuperação de órfãos / sweeper de timeout). */
+export async function listRunningJobs(orgId: string): Promise<JobDTO[]> {
+  assertConfigured();
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("execution_jobs")
+    .select("*")
+    .eq("org_id", orgId)
+    .eq("state", "RUNNING")
+    .order("started_at", { ascending: true });
+  if (error) throw new HubError("INTERNAL", "Falha ao listar jobs em execução.", 500);
+  return (data ?? []).map((r) => toJobDTO(r as Record<string, unknown>));
+}
+
+/** ISO do último heartbeat do job (null = nunca). */
+export async function lastHeartbeatAt(jobId: string, orgId: string): Promise<string | null> {
+  assertConfigured();
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("execution_events")
+    .select("created_at")
+    .eq("job_id", jobId)
+    .eq("org_id", orgId)
+    .eq("type", "heartbeat")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw new HubError("INTERNAL", "Falha ao ler heartbeat.", 500);
+  const row = data as { created_at?: string } | null;
+  return row?.created_at ? String(row.created_at) : null;
+}
+
+/** Conta eventos de um tipo na timeline do job (ex.: 'attempt_failed'). */
+export async function countJobEvents(
+  jobId: string,
+  orgId: string,
+  type: string,
+): Promise<number> {
+  assertConfigured();
+  const supabase = getSupabaseAdmin();
+  const { count, error } = await supabase
+    .from("execution_events")
+    .select("id", { count: "exact", head: true })
+    .eq("job_id", jobId)
+    .eq("org_id", orgId)
+    .eq("type", type);
+  if (error) throw new HubError("INTERNAL", "Falha ao contar eventos.", 500);
+  return count ?? 0;
+}
+
+/** Atualiza o progresso (0..100) sem mudar de estado. */
+export async function updateJobProgress(
+  jobId: string,
+  orgId: string,
+  progress: number,
+): Promise<void> {
+  assertConfigured();
+  const clamped = Math.min(100, Math.max(0, progress));
+  const supabase = getSupabaseAdmin();
+  const { error } = await supabase
+    .from("execution_jobs")
+    .update({ progress: clamped, updated_at: new Date().toISOString() })
+    .eq("id", jobId)
+    .eq("org_id", orgId);
+  if (error) throw new HubError("INTERNAL", "Falha ao atualizar progresso.", 500);
+}
+
+/** RUNNING → COMPLETED com resultado final. */
+export async function completeJob(
+  jobId: string,
+  orgId: string,
+  result: unknown,
+  actor: Actor,
+): Promise<JobDTO> {
+  return applyTransition(jobId, orgId, "COMPLETED", actor, {
+    note: "execução concluída",
+    result,
+    progress: 100,
+    finishedAt: new Date().toISOString(),
+  });
+}
+
+/** RUNNING/QUEUED → FAILED com erro estruturado { code, message, … }. */
+export async function failJob(
+  jobId: string,
+  orgId: string,
+  errorPayload: { code: string; message: string; details?: unknown },
+  actor: Actor,
+  note?: string,
+): Promise<JobDTO> {
+  return applyTransition(jobId, orgId, "FAILED", actor, {
+    note: note ?? errorPayload.message,
+    error: {
+      code: errorPayload.code,
+      message: errorPayload.message,
+      ...(errorPayload.details !== undefined ? { details: errorPayload.details } : {}),
+    },
+    finishedAt: new Date().toISOString(),
+  });
+}
+
+/** RUNNING → QUEUED (recuperação de órfão; transição FASE 3 da máquina). */
+export async function requeueJob(
+  jobId: string,
+  orgId: string,
+  reason: string,
+  actor: Actor,
+): Promise<JobDTO> {
+  return applyTransition(jobId, orgId, "QUEUED", actor, {
+    note: reason,
+    startedAt: null,
+  });
+}
+
+/**
+ * Jobs FAILED com o `error` bruto (para a listagem da dead-letter).
+ * Sem filtro jsonb no SQL: a filtragem por `dead_lettered` é feita em
+ * memória em lib/jobs/dead-letter.ts (volumes pequenos; DLQ não é hot path).
+ */
+export async function listFailedJobsWithError(
+  orgId: string,
+  limit: number,
+): Promise<{ id: string; orgId: string; toolId: string; error: unknown; createdAt: string }[]> {
+  assertConfigured();
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("execution_jobs")
+    .select("id, org_id, tool_slug, error, created_at")
+    .eq("org_id", orgId)
+    .eq("state", "FAILED")
+    .order("created_at", { ascending: false })
+    .limit(limit);
+  if (error) throw new HubError("INTERNAL", "Falha ao listar jobs falhados.", 500);
+  return (data ?? []).map((r) => {
+    const row = r as Record<string, unknown>;
+    return {
+      id: String(row.id),
+      orgId: String(row.org_id),
+      toolId: String(row.tool_slug ?? ""),
+      error: row.error ?? null,
       createdAt: String(row.created_at),
     };
   });
