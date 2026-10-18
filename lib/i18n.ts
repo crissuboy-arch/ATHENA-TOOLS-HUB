@@ -135,7 +135,7 @@ export const t = {
     enter: "Entrar",
     viewCatalog: "Ver catálogo",
     honestNote:
-      "Versão inicial em desenvolvimento ativo: alguns módulos ainda estão sendo conectados a dados reais.",
+      "Versão inicial em desenvolvimento ativo: Catálogo, Execuções, Aprovações, Resultados e Governança usam dados reais; Integrações e Engenharia Reversa têm partes ainda em construção — marcadas como tal na interface.",
     modules: {
       catalog: {
         title: "Catálogo",

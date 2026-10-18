@@ -32,9 +32,10 @@ export async function GET(
 
     const { id } = await params;
     const supabase = getSupabaseAdmin();
+    // Capabilities reais vêm embutidas de `tool_capabilities` (ver toToolDTO).
     const { data, error } = await supabase
       .from("tools")
-      .select("*")
+      .select("*, tool_capabilities(name)")
       .eq("id", id)
       .maybeSingle();
     if (error) throw new HubError("INTERNAL", "Falha ao carregar a tool.", 500);

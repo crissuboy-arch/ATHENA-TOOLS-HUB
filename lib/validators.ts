@@ -53,15 +53,33 @@ export const jobDecisionSchema = z.object({
 });
 export type JobDecision = z.infer<typeof jobDecisionSchema>;
 
+/**
+ * FASE 1 — drift código↔schema corrigido (ver supabase/migrations/0001_core.sql):
+ * - `type` usa os valores reais do enum `integration_type`
+ *   ('mcp', 'cli', 'api', 'webhook', 'sdk') — "api_key" não existe no schema
+ *   (a chave vive em `integrations.config.apiKeyHash`, ver lib/api-keys.ts).
+ * - a tabela `integrations` NÃO tem coluna `status`; a coluna real é `state`
+ *   (enum `tool_state`), com default 'cataloged' no banco.
+ */
 export const integrationConfigSchema = z.object({
   name: z.string().min(1, "name é obrigatório.").max(120),
-  type: z.enum(["api_key", "webhook", "mcp"], {
-    message: "type deve ser 'api_key', 'webhook' ou 'mcp'.",
+  type: z.enum(["mcp", "cli", "api", "webhook", "sdk"], {
+    message: "type deve ser um dos valores de integration_type: mcp, cli, api, webhook, sdk.",
   }),
   scopes: z
     .array(z.enum(["tools:read", "jobs:read", "jobs:write", "approvals:decide"]))
     .min(1, "Informe ao menos um scope."),
-  status: z.enum(["active", "disabled"]).default("active"),
+  state: z
+    .enum([
+      "cataloged",
+      "needs-config",
+      "in-development",
+      "connected",
+      "operational-tested",
+      "error",
+      "unavailable",
+    ])
+    .default("cataloged"),
   config: z.record(z.string(), z.unknown()).default({}),
 });
 export type IntegrationConfig = z.infer<typeof integrationConfigSchema>;

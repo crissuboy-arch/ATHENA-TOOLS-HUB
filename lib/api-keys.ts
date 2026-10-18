@@ -71,10 +71,13 @@ export async function verifyApiKey(
 
   // MVP: varredura das integrações ativas com comparação em tempo constante.
   // (Tabela dedicada com índice no hash é o upgrade documentado.)
+  // FASE 1 — drift corrigido: a tabela integrations NÃO tem coluna `status`;
+  // a coluna real é `state` (enum tool_state). 'connected' = integração ativa.
+  // Ver supabase/migrations/0001_core.sql.
   const { data, error } = await supabase
     .from("integrations")
     .select("id, org_id, config")
-    .eq("status", "active");
+    .eq("state", "connected");
   if (error || !data) return null;
 
   const keyHashBuf = Buffer.from(keyHash, "hex");

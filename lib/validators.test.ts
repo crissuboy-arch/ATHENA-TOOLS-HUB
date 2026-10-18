@@ -126,18 +126,21 @@ describe("jobDecisionSchema", () => {
 describe("integrationConfigSchema", () => {
   const valid = {
     name: "Minha API",
-    type: "api_key",
+    type: "api",
     scopes: ["tools:read"] as Array<"tools:read">,
   };
-  it("aceita input válido com defaults status/config", () => {
+  it("aceita input válido com defaults state/config (alinhado ao schema real)", () => {
     const r = integrationConfigSchema.safeParse(valid);
     expect(r.success).toBe(true);
     if (r.success) {
-      expect(r.data.status).toBe("active");
+      expect(r.data.state).toBe("cataloged");
       expect(r.data.config).toEqual({});
     }
   });
-  it("rejeita type fora do enum", () => {
+  it("rejeita type fora do enum integration_type", () => {
+    expect(
+      integrationConfigSchema.safeParse({ ...valid, type: "api_key" }).success,
+    ).toBe(false);
     expect(
       integrationConfigSchema.safeParse({ ...valid, type: "oauth" }).success,
     ).toBe(false);
