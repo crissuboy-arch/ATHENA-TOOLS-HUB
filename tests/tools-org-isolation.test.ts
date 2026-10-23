@@ -106,7 +106,7 @@ const TOOL_ROWS: ToolRow[] = [
 /** BD falsa: aplica os filtros .eq() sobre as linhas em memória. */
 function makeFakeDb() {
   return {
-    from(_table: string) {
+    from() {
       const filters: Array<{ col: string; val: unknown }> = [];
       const match = () =>
         TOOL_ROWS.filter((r) => filters.every((f) => r[f.col] === f.val));
