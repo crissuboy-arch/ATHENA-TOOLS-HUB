@@ -10,9 +10,13 @@
 
 ### A. Projeto Supabase pausado (o mais provável no free tier)
 
-**Sintoma:** app mostra "Banco de dados não conectado" de repente; health
-`/api/v1/health` → `supabase:"not-configured"` (se as env vars sumiram) ou
-timeouts/erros de conexão.
+**Sintoma:** as chamadas à API começam a falhar com timeouts/erros de
+conexão e a app mostra estados de erro, MAS o `/api/v1/health` pode
+continuar a responder `supabase:"configured"` — esse campo só reflete a
+presença das env vars (`isSupabaseConfigured()`), NÃO faz ping ao banco.
+O sinal fiável da pausa é o estado `Paused` no dashboard do Supabase
+(ou `supabase:"not-configured"` no health, que indica outra coisa: env
+vars em falta).
 
 **Causa provável:** 7 dias sem pedidos → Supabase pausa o projeto free.
 
@@ -46,9 +50,10 @@ timeouts/erros de conexão.
    - Supabase: Project Settings → API → **regenerar** a chave afetada
      (`anon` ou `service_role`).
    - Integração Athena: `UPDATE integrations SET state='unavailable'` para a
-     integração da chave (coluna real; ver bloqueador do drift `status` ×
-     `state` em `docs/ATHENA_MANUAL.md` §1); emitir nova (processo em
-     `docs/ATHENA_INTEGRATION.md`).
+     integração da chave — a revogação é imediata porque `verifyApiKey` só
+     aceita `state='connected'` (drift `status` × `state` corrigido no
+     código na Fase 1; ver `docs/ATHENA_MANUAL.md` §1); emitir nova
+     (processo em `docs/ATHENA_INTEGRATION.md`).
 2. Atualizar o novo valor na Vercel (Environment Variables) + `.env.local`.
 3. Redeploy (por causa do `NEXT_PUBLIC_*`, se a `anon` mudou).
 4. Registar o incidente (o quê, quando, que chave, rotação feita) — fora do git.
@@ -80,14 +85,19 @@ há fatura surpresa — mas também não há "pagar para continuar".
 ## 2. Rollback de migrations (banco)
 
 Factos:
-- As migrations `0001`–`0005` são **re-runnable** (idempotentes), mas **não
-  têm `down` migrations** — não existe "desfazer 0004" automático.
+- Existem **10 migrations** (`0001`–`0010`). As `0001`–`0005` estão
+  registadas como aplicadas no live (2026-10-17; ver
+  `supabase/MIGRATIONS.md`); as `0006`–`0010` são ficheiros apenas. São
+  **re-runnable** (idempotentes) onde aplicável, mas **não têm `down`
+  migrations** — não existe "desfazer 0004" automático.
 - Nunca editar um arquivo de migration já aplicado no live e re-aplicar.
 
 **Procedimento correto (para a frente, não para trás):**
 1. Identificar a migration problemática e o sintoma (logs, `verify_rls.sql`).
-2. Escrever uma **nova** migration corretiva `0006_<assunto>.sql`
-   (ex.: recriar policy, largar coluna adicionada por engano).
+2. Escrever uma **nova** migration corretiva **`0011_<assunto>.sql`** —
+   o próximo número livre (FASE 2B: a versão antiga deste documento dizia
+   `0006_`, mas `0006`–`0010` já estão ocupados por migrations reais;
+   reutilizar um número partiria a ordem e o histórico).
 3. Testar a corretiva **primeiro** num projeto Supabase à parte (free permite
    2 projetos/org — usar o segundo como "staging" descartável).
 4. Aplicar no live via SQL editor, na ordem; correr `verify_rls.sql` depois.
@@ -118,8 +128,9 @@ Se o projeto Vercel e/ou Supabase se perderem:
 
 1. **Código**: o repo `crissuboy-arch/ATHENA-TOOLS-HUB` (branch
    `feat/mvp-foundation`) é a fonte — clonar de novo chega.
-2. **Banco**: criar novo projeto Supabase dedicado → aplicar `0001`–`0005`
-   por ordem (`docs/SUPABASE_SETUP.md` §2) → `bootstrap_organization` →
+2. **Banco**: criar novo projeto Supabase dedicado → aplicar `0001`–`0010`
+   por ordem (`docs/SUPABASE_SETUP.md` §2) — a lista antiga (`0001`–`0005`)
+   deixava 14 das 25 tabelas de fora → `bootstrap_organization` →
    `seed_catalog` → recriar utilizadores/integrações (as chaves API têm de ser
    **re-emitidas** — só hashes viviam no banco) → `verify_rls.sql`.
 3. **Segredos**: todos re-obtidos das fontes (dashboard Supabase, emissor de

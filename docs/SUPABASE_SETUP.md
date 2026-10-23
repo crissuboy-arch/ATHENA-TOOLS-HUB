@@ -1,11 +1,15 @@
 # Supabase setup — ATHENA TOOLS HUB
 
-> **PENDING OWNER DECISION: Confirm whether a dedicated Supabase project for Tools Hub exists; never reuse another product's database without proper isolation and her explicit authorization.**
-
-Until that decision is made, this project ships **migrations + docs only**.
-No Supabase project is created or connected from this repo. The app runs
-without a database and shows an honest "not connected" state
-(`isSupabaseConfigured()` in `lib/supabase.ts`).
+> **Estado atual (FASE 2B, C8):** a decisão já foi tomada — EXISTE um
+> projeto Supabase **dedicado** ao Tools Hub
+> (`https://bvsvqueeihljwksemfmz.supabase.co`); nunca reutilizar a base
+> de outro produto. As migrations `0001`–`0005` estão registadas como
+> aplicadas pela Cristiane (2026-10-17; verificação viva independente
+> pendente — ver `supabase/MIGRATIONS.md`); as `0006`–`0010` são
+> ficheiros apenas. Sem as env vars, a app corre sem base de dados e
+> mostra o estado honesto "not connected" (`isSupabaseConfigured()`).
+> (A versão anterior deste cabeçalho dizia "decisão pendente / só
+> migrations" — estava desatualizada face ao estado medido.)
 
 ## 1. Create the dedicated project (owner action)
 
@@ -27,11 +31,20 @@ In the Supabase dashboard → **SQL editor**, run each file from
 | `0003_seed.sql`   | Defines `seed_catalog(org_id)` (org-scoped catalog, verified licenses) |
 | `0004_job_tool_slug.sql` | Adds `tool_slug` to `execution_jobs`    |
 | `0005_security_hardening.sql` | REVOKEs `bootstrap_organization`, role-escalation trigger, cross-org FK triggers |
+| `0006_profiles_roles.sql` | `profiles`, `permissions`, `role_permissions` — **ficheiro apenas, NÃO aplicado** |
+| `0007_tool_lifecycle.sql` | `tool_categories`, `tool_versions`, `tool_installations` — **ficheiro apenas, NÃO aplicado** |
+| `0008_agents_missions.sql` | `agents`, `agent_tool_permissions`, `missions`, `mission_steps` — **ficheiro apenas, NÃO aplicado** |
+| `0009_execution_webhooks.sql` | `job_attempts`, `integration_endpoints`, `webhooks`, `webhook_deliveries` — **ficheiro apenas, NÃO aplicado** |
+| `0010_rls_phase2.sql` | RLS das tabelas 0006–0009 — **ficheiro apenas, NÃO aplicado** |
 
-All five are re-runnable. Verify in **Table editor** that the 11 tables
+As cinco primeiras são re-runnable e estão registadas como aplicadas
+(2026-10-17). Verify in **Table editor** that the 11 tables of `0001`
 exist (`organizations`, `organization_members`, `tools`,
 `tool_capabilities`, `integrations`, `execution_jobs`, `execution_events`,
 `approval_requests`, `generated_assets`, `usage_records`, `audit_logs`).
+As `0006`–`0010` acrescentariam 14 tabelas (25 no total) — só depois de
+aplicadas, o que ainda não aconteceu. Estado completo e autoritativo:
+`supabase/MIGRATIONS.md`.
 
 ## 3. Create the first organization + user
 
@@ -106,7 +119,7 @@ Run these checks in the SQL editor and in the app:
    `bootstrap_organization` abuse, viewer mutation, member approval). Every
    attack must be BLOCKED with the expected error/zero-rows outcome.
 
-## 6. When Supabase is NOT configured (current state)
+## 6. When Supabase is NOT configured
 
 - `isSupabaseConfigured()` returns `false`.
 - All Supabase client creators throw with a clear message pointing here.

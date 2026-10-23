@@ -3,8 +3,14 @@
 Fonte de verdade do esquema da base de dados. Ficheiros em `migrations/`,
 numerados sequencialmente (`NNNN_name.sql`).
 
-> ⚠️ **NENHUMA destas migrations foi aplicada ao projeto live**
-> (`https://bvsvqueeihljwksemfmz.supabase.co`).
+> ⚠️ **Estado de aplicação (alinhado na FASE 2B, C8):** as migrations
+> `0001`–`0005` estão registadas como **aplicadas ao projeto live**
+> (`https://bvsvqueeihljwksemfmz.supabase.co`) pela Cristiane em
+> 2026-10-17 — é o registo dela; a **verificação viva independente
+> continua pendente** (os scripts de auditoria corrigidos na Fase 2A
+> aguardam execução dela). As `0006`–`0010` **NÃO foram aplicadas** —
+> existem apenas como ficheiros. (A versão anterior deste aviso dizia
+> "nenhuma foi aplicada", o que contradizia a tabela abaixo.)
 > A aplicação é um passo manual da Cristiane no SQL editor do Supabase,
 > **por ordem numérica**, depois de rever cada ficheiro. Ver
 > "Ordem de aplicação" abaixo.
@@ -85,6 +91,10 @@ existente foi reutilizada e o mapeamento está documentado acima.
   credenciais neste ambiente e a regra é nunca aplicar ao live a partir
   daqui). A validação foi revisão manual rigorosa + lint estrutural;
   sem `psql`/`pgcrypto` local não houve execução real do SQL.
+  A aplicação das 0001–0005 (2026-10-17) assenta no registo da Cristiane;
+  a verificação viva independente (contagem de tabelas/policies via
+  scripts de auditoria) continua **pendente dela** — até lá, "aplicada"
+  lê-se como "declarada aplicada", não como facto auditado por nós.
 - **Testes de integração app↔DB:** `lib/db-types.ts` ainda espelha só o
   0001 (atualizar os tipos é trabalho de outra fase — fora do escopo
   desta, que só toca em `supabase/`).
