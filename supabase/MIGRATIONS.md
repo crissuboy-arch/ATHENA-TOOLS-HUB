@@ -86,17 +86,17 @@ existente foi reutilizada e o mapeamento está documentado acima.
 
 ## O que NÃO foi verificado nesta fase
 
-- **Aplicação real no live:** as migrations 0006–0010 existem apenas como
-  ficheiros. Não foram executadas contra nenhum Supabase (não há
-  credenciais neste ambiente e a regra é nunca aplicar ao live a partir
-  daqui). A validação foi revisão manual rigorosa + lint estrutural;
-  sem `psql`/`pgcrypto` local não houve execução real do SQL.
-  A aplicação das 0001–0005 (2026-10-17) assenta no registo da Cristiane;
-  a verificação viva independente (contagem de tabelas/policies via
-  scripts de auditoria) continua **pendente dela** — até lá, "aplicada"
-  lê-se como "declarada aplicada", não como facto auditado por nós.
-- **Testes de integração app↔DB:** `lib/db-types.ts` ainda espelha só o
-  0001 (atualizar os tipos é trabalho de outra fase — fora do escopo
-  desta, que só toca em `supabase/`).
+- **Aplicação real no live:** a auditoria somente de leitura da Cristiane
+  ao projeto Supabase dedicado (2026-10-23) confirmou a estrutura
+  completa presente: 25/25 tabelas, 25/25 com RLS ativa, 82 policies na
+  schema public, 102 associações papel-permissão (= seed da 0006) —
+  ou seja, o schema de 0001–0010 existe na BD viva. Ressalva da própria
+  auditoria: a presença da estrutura está provada; políticas, funções e
+  triggers individuais e a integralidade de cada migration **não** foram
+  validados objeto a objeto.
+- **Testes de integração app↔DB:** `lib/db-types.ts` espelha 0001–0010
+  desde a FASE 2C (C6) — 25 tabelas, 11 enums, 8 funções — com o teste
+  anti-drift `tests/schema-types-consistency.test.ts` a derivar o schema
+  das migrations e a falhar se os tipos divergirem.
 - **`supabase/verify_rls.sql`:** continua a cobrir só as tabelas 0001;
   estender a auditoria às tabelas novas é follow-up sugerido.
