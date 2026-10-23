@@ -18,6 +18,17 @@
  * especificado / desconhecido — nunca inventado. O estado autoritativo da
  * ferramenta é derivado por lib/catalog/health.ts (ToolHealthState); o campo
  * `state` legado é mantido para a UI existente.
+ *
+ * FASE 2B (C8) — alinhamento código↔seed: os estados legados das 10 tools
+ * partilhadas com a seed (supabase/migrations/0003_seed.sql) foram
+ * alinhados a esta: Craft = in-development; HyperFrames = cataloged;
+ * Apify/Playwright/Google Workspace = needs-config. Os estados derivados
+ * (health.ts) não mudam: os três valores legados mapeiam para
+ * NOT_CONFIGURED. Entradas só em código (sem linha na seed): `supabase`
+ * (serviço) e `mkvideos` (executor vive na Athena).
+ * DIVERGÊNCIA ABERTA (decisão da proprietária pendente): o id em código
+ * `gws-cli` ≠ slug da seed/BD `google-workspace-cli`. Não renomear sem
+ * decisão — ver docs/CATALOG_STATES.md §3.
  */
 
 import type { ToolCategory, ToolEntry } from "./types";
@@ -86,7 +97,7 @@ export const TOOLS: ToolEntry[] = [
     category: "design-vectors",
     repoUrl: "https://github.com/storytold/designcraft",
     license: "MIT OR Apache-2.0",
-    state: "cataloged",
+    state: "in-development",
     capabilities: [
       "Diagramação de revistas e páginas através de comandos MCP",
       "Exportação para PDF, EPUB, PowerPoint editável e PNG",
@@ -122,7 +133,7 @@ export const TOOLS: ToolEntry[] = [
     category: "image-photo",
     repoUrl: "https://github.com/storytold/photocraft",
     license: "MIT OR Apache-2.0",
-    state: "cataloged",
+    state: "in-development",
     capabilities: [
       "Edição fotográfica através de comandos (UI, CLI, JSON ou MCP)",
       "Leitura e escrita de arquivos PSD com camadas",
@@ -158,7 +169,7 @@ export const TOOLS: ToolEntry[] = [
     category: "image-photo",
     repoUrl: "https://github.com/storytold/lightcraft",
     license: "MIT OR Apache-2.0",
-    state: "cataloged",
+    state: "in-development",
     capabilities: [
       "Revelação e ajuste de fotos através de comandos",
       "Máscaras locais: pincel, gradientes lineares/radiais, céu e assunto",
@@ -195,7 +206,7 @@ export const TOOLS: ToolEntry[] = [
     repoUrl: "https://github.com/storytold/artcraft",
     website: "https://getartcraft.com",
     license: "MIT OR Apache-2.0",
-    state: "cataloged",
+    state: "in-development",
     capabilities: [
       "Composição de cenas em 2D e 3D com personagens e props",
       "Geração de imagem e vídeo por prompt (via provedores externos)",
@@ -235,7 +246,7 @@ export const TOOLS: ToolEntry[] = [
     category: "documents",
     repoUrl: "https://github.com/storytold/wordcraft",
     license: "MIT OR Apache-2.0",
-    state: "cataloged",
+    state: "in-development",
     capabilities: [
       "Criação e edição de documentos através de comandos MCP",
       "Conversão em lote via CLI (docx→pdf/odt/rtf/html/md)",
@@ -386,7 +397,7 @@ export const TOOLS: ToolEntry[] = [
       "CLI oficial da Microsoft sobre o Playwright para que agentes de IA controlem um navegador de verdade: navegar, inspecionar páginas, clicar, preencher formulários e extrair conteúdo. Útil para automações web, testes e coleta de dados em páginas que exigem JavaScript.",
     category: "automation",
     repoUrl: "https://github.com/microsoft/playwright-cli",
-    state: "cataloged",
+    state: "needs-config",
     capabilities: [
       "Navegação e interação com páginas reais",
       "Snapshots estruturados para agentes",
@@ -419,7 +430,7 @@ export const TOOLS: ToolEntry[] = [
       "Ferramenta de linha de comando que dá acesso estruturado (JSON) ao Drive, Gmail, Calendar, Sheets, Docs, Chat e Admin do Google Workspace, construída a partir do Google Discovery Service e com skills para agentes de IA. NÃO assumir que é um produto oficial do Google — é um projeto da equipe de desenvolvedores, pré-v1.0 e em desenvolvimento ativo.",
     category: "automation",
     repoUrl: "https://github.com/googleworkspace/cli",
-    state: "cataloged",
+    state: "needs-config",
     capabilities: [
       "Listar e gerenciar arquivos do Drive",
       "Ler e enviar e-mails do Gmail",

@@ -65,7 +65,7 @@ em `types.ts` **somente para a UI não quebrar** — o modelo autoritativo é o
 `getToolHealth()` devolve `legacyState` + `legacyMappedState` junto do estado
 derivado, para auditoria da migração.
 
-## 3. Retrato honesto em 2026-10-18
+## 3. Retrato honesto (atualizado na FASE 2B, 2026-10-23)
 
 Sem evidência de (b) nem (c) para nenhuma ferramenta — o Hub ainda não tem
 cofre de credenciais nem histórico de execuções. Resultado derivado:
@@ -73,20 +73,41 @@ cofre de credenciais nem histórico de execuções. Resultado derivado:
 | Ferramenta | Legado | Adapter 501? | Estado derivado |
 |---|---|---|---|
 | vectorcraft | in-development | sim | `NOT_CONFIGURED` |
-| designcraft | cataloged | não | `NOT_CONFIGURED` |
-| photocraft | cataloged | não | `NOT_CONFIGURED` |
-| lightcraft | cataloged | não | `NOT_CONFIGURED` |
-| artcraft | cataloged | não | `NOT_CONFIGURED` |
-| wordcraft | cataloged | não | `NOT_CONFIGURED` |
+| designcraft | in-development | não | `NOT_CONFIGURED` |
+| photocraft | in-development | não | `NOT_CONFIGURED` |
+| lightcraft | in-development | não | `NOT_CONFIGURED` |
+| artcraft | in-development | não | `NOT_CONFIGURED` |
+| wordcraft | in-development | não | `NOT_CONFIGURED` |
 | hyperframes | cataloged | sim | `NOT_CONFIGURED` |
 | apify-mcp | needs-config | sim | `NOT_CONFIGURED` |
-| playwright-cli | cataloged | não | `NOT_CONFIGURED` |
-| gws-cli | cataloged | não | `NOT_CONFIGURED` |
+| playwright-cli | needs-config | não | `NOT_CONFIGURED` |
+| gws-cli | needs-config | não | `NOT_CONFIGURED` |
 | supabase | needs-config | não | `NOT_CONFIGURED` |
+| mkvideos | cataloged | sim | `NOT_CONFIGURED` |
 
-Nenhuma ferramenta declara executor real (`executor: null` nas 11),
-nenhuma tem histórico (`history: null`), e os 3 adapters registados têm
+Nenhuma ferramenta declara executor real (`executor: null` nas 12),
+nenhuma tem histórico (`history: null`), e os **4** adapters registados
+(vectorcraft, hyperframes, apify-mcp, mkvideos) têm
 `executionReady = false` — **nenhuma pode ser READY hoje**.
+
+### 3.1 Alinhamento código ↔ seed (FASE 2B, C8)
+
+A Fase 1 mediu divergências entre o catálogo em código
+(`lib/catalog/tools.ts`, 12 entradas) e a seed da BD
+(`supabase/migrations/0003_seed.sql`, 10 entradas). Resolução pelo lado
+do código/documentação (BD e seed aplicada intocadas):
+
+| Divergência medida | Resolução |
+|---|---|
+| Craft (designcraft, photocraft, lightcraft, artcraft, wordcraft): código `cataloged` ≠ seed `in-development` | ✅ Código alinhado à seed: `in-development` |
+| playwright-cli: código `cataloged` ≠ seed `needs-config` | ✅ Código alinhado à seed: `needs-config` |
+| gws-cli: código `cataloged` ≠ seed `needs-config` | ✅ Código alinhado à seed: `needs-config` |
+| `mkvideos` e `supabase` só existem em código (sem linha na seed) | Documentado: `supabase` é entrada de serviço; `mkvideos` tem o executor do lado da Athena (trabalho do Cláudio). A seed NÃO foi alterada — incluir estas entradas na BD é decisão futura dela, via nova migration |
+| Slug: código `gws-cli` ≠ seed/BD `google-workspace-cli` | ⚠️ **DECISÃO NECESSÁRIA da proprietária:** qual é o slug canónico? Renomear em código afeta `SERVICE_IDS`, links da UI e referências; renomear na BD exige migration corretiva. Até à decisão, os dois nomes coexistem e referem a mesma ferramenta (Google Workspace CLI) |
+
+Os estados derivados não mudam com este alinhamento: `cataloged`,
+`needs-config` e `in-development` mapeiam todos para `NOT_CONFIGURED`
+no modelo de saúde (§2).
 
 ## 4. Spec de wiring — GET /api/v1/tools
 
@@ -98,7 +119,7 @@ nenhuma tem histórico (`history: null`), e os 3 adapters registados têm
 **Passo 1 — imports** (topo do ficheiro):
 
 ```ts
-import "@/lib/adapters"; // side-effect: registra os 3 adapters no toolRegistry
+import "@/lib/adapters"; // side-effect: registra os 4 adapters no toolRegistry
 import { getToolHealth } from "@/lib/catalog/health";
 ```
 

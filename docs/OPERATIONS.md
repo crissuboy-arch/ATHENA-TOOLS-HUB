@@ -62,7 +62,7 @@ falsos. Com as chaves, reinicia o `dev` após gravar o `.env.local`.
 Comandos úteis:
 
 ```bash
-npm test          # 122 testes (vitest)
+npm test          # 486 testes (vitest) — medido na Fase 2B, 2026-10-23
 npm run typecheck # tsc --noEmit (0 erros)
 npm run lint      # eslint (0 erros)
 npm run build     # build de produção local
@@ -116,12 +116,15 @@ Resumo operacional:
 
 - **Criar**: gerar com `generateApiKey()` (`lib/api-keys.ts`) → gravar **só o
   hash SHA-256** em `integrations.config.apiKeyHash` + scopes em
-  `integrations.config.scopes`, `state` inicial (ver bloqueador em
+  `integrations.config.scopes`, com `state='connected'` (é o ÚNICO estado
+  que autentica — `verifyApiKey` filtra por ele; ver
   `docs/ATHENA_MANUAL.md` §1) → entregar a chave crua
   **uma única vez** (arquivo/vault, nunca chat, nunca git).
 - **Revogar**: `UPDATE integrations SET state='unavailable' WHERE id=...`
-  (ver bloqueador do drift `status` × `state` em `docs/ATHENA_MANUAL.md` §1 —
-  até à correção no código, a autenticação por API key está inoperante).
+  — qualquer estado ≠ `'connected'` revoga de imediato, porque a
+  autenticação só aceita `connected` (drift `status` × `state` corrigido
+  no código na Fase 1; o texto antigo desta secção, que dizia a
+  autenticação estar "inoperante", ficou obsoleto).
 - **Auditar**: chaves nunca aparecem em logs/banco (só hashes).
 
 ## 7. Logs e observabilidade (o que há hoje)
