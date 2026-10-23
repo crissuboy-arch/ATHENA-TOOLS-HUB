@@ -7,6 +7,13 @@ info:
     Autenticação: `Authorization: Bearer <api key>` + anti-replay
     (`X-Request-Timestamp`, `X-Nonce`), ou sessão de usuário Supabase.
     Erros seguem sempre `{ error: { code, message, requestId } }`.
+
+    FASE 2B (C8): documentadas as rotas que já existiam em código e
+    faltavam aqui — `POST /athena/missions`, `GET /athena/missions/{id}`
+    e `GET /automations` — e alinhados `/tools` (orgId obrigatório desde
+    a C1) e `/approvals/{id}/decision` (decisão exclusivamente humana
+    desde a C4: chaves de API são recusadas com 403 mesmo com o scope
+    `approvals:decide`). Nada foi renomeado nem removido.
 servers:
   - url: https://tools-hub.exemplo.com/api/v1
     description: Produção (placeholder — sem deploy autorizado no MVP)
@@ -199,6 +206,180 @@ components:
           maxLength: 2000
           example: Aprovado — briefing confere com o roteiro.
 
+    MissionStatus:
+      type: string
+      enum: [RECEIVED, VALIDATING, AWAITING_APPROVAL, QUEUED, RUNNING, SUCCEEDED, FAILED, CANCELLED]
+      description: |
+        Estado da missão no vocabulário ATHENA (lib/athena/contract.ts).
+        Distinto do estado interno do Hub (JobStatus), que vem em
+        `hub_status` para transparência/debug.
+
+    MissionCallbackConfig:
+      type: object
+      required: [url]
+      properties:
+        url:
+          type: string
+          format: uri
+          description: URL do callback (HTTPS obrigatório).
+        method:
+          type: string
+          enum: [POST]
+          default: POST
+        secret:
+          type: string
+          description: |
+            Segredo opcional p/ autenticação futura do callback (HMAC).
+            É validado na entrada mas NÃO é persistido: a entrega de
+            webhooks não está implementada no MVP e segredos nunca vão
+            para o banco.
+
+    CreateMissionRequest:
+      type: object
+      required: [mission_id, tool_id, params]
+      description: Payload da missão (Athena → Hub), validado por `missionSchema` em lib/athena/contract.ts.
+      properties:
+        mission_id:
+          type: string
+          format: uuid
+          description: UUID da missão (lado Athena). É PRESERVADO como idempotencyKey do job — reenvio devolve o job original.
+        tool_id:
+          type: string
+          maxLength: 120
+          example: vectorcraft
+          description: Slug da tool do catálogo.
+        org_id:
+          type: string
+          format: uuid
+          description: Opcional; se presente, tem de ser a org da chave de API (divergência → 403).
+        params:
+          type: object
+          additionalProperties: true
+          description: Parâmetros da tool (validados contra o contrato da tool).
+        requires_human_approval:
+          type: boolean
+          description: |
+            true → o job TEM de passar por PENDING_APPROVAL; false → não
+            passa; omitido → decide o contrato da tool no Hub. Divergência
+            face ao contrato da tool → 409 CONFLICT (nunca ajustado em
+            silêncio).
+        callback: { $ref: '#/components/schemas/MissionCallbackConfig' }
+        priority:
+          type: integer
+          minimum: 0
+          maximum: 100
+          default: 50
+        tags:
+          type: array
+          items: { type: string, maxLength: 40 }
+          maxItems: 10
+          default: []
+        expires_at:
+          type: string
+          format: date-time
+          description: Expiração pretendida da missão (ISO 8601); validada na entrada (no passado → 400).
+
+    MissionApprovalRef:
+      type: object
+      required: [approval_id, decision_endpoint, note]
+      properties:
+        approval_id: { type: string }
+        decision_endpoint: { type: string, example: /api/v1/approvals/<job-id>/decision }
+        note: { type: string }
+
+    MissionAsset:
+      type: object
+      required: [id, kind, url]
+      properties:
+        id: { type: string, format: uuid }
+        kind: { type: string }
+        url: { type: string, format: uri }
+        metadata: { description: Metadados do asset (livre). }
+
+    MissionResponse:
+      type: object
+      required: [mission_id, job_id, org_id, status, hub_status, requires_human_approval,
+                 awaiting_approval, approval, result, error_message, assets,
+                 integration_status, callback, created_at, updated_at]
+      description: Envelope de resposta da missão (lib/athena/contract.ts — campos em snake_case, como no código).
+      properties:
+        mission_id: { type: string, format: uuid }
+        job_id: { type: string, format: uuid }
+        org_id: { type: string, format: uuid }
+        status: { $ref: '#/components/schemas/MissionStatus' }
+        hub_status: { $ref: '#/components/schemas/JobStatus' }
+        requires_human_approval: { type: boolean }
+        awaiting_approval: { type: boolean }
+        approval:
+          nullable: true
+          description: Ponto de aprovação quando awaiting_approval=true (sistema de approvals existente); null caso contrário.
+          allOf:
+            - $ref: '#/components/schemas/MissionApprovalRef'
+        result: { description: Resultado final (estado terminal SUCCEEDED); null até lá. }
+        error_message: { type: string, nullable: true }
+        assets:
+          type: array
+          nullable: true
+          items: { $ref: '#/components/schemas/MissionAsset' }
+          description: Assets produzidos; null/vazio honesto enquanto nada foi produzido.
+        integration_status:
+          type: string
+          enum: [pending, ready]
+          description: "'ready' só com executor real ligado; 'pending' = contrato pronto, executor ausente."
+        callback:
+          nullable: true
+          type: object
+          required: [accepted, delivery]
+          properties:
+            accepted: { type: boolean }
+            delivery:
+              type: string
+              enum: [not-implemented]
+              description: A entrega de webhooks NÃO está implementada no MVP.
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    CreateMissionResponse:
+      type: object
+      required: [mission, deduplicated]
+      properties:
+        mission: { $ref: '#/components/schemas/MissionResponse' }
+        deduplicated:
+          type: boolean
+          description: true quando o mission_id já existia (job original retornado com 200; criação nova = 201).
+
+    AutomationCapability:
+      type: object
+      required: [kind, name, inemaReference, description, executionReady, requiresApproval]
+      description: Capacidade declarada de automação (lib/automations/types.ts) — catálogo honesto, somente leitura.
+      properties:
+        kind:
+          type: string
+          enum: [reel_pipeline, audience_video, trend_research, content_prep, campaign_report, scheduled_publish]
+        name: { type: string }
+        inemaReference:
+          type: string
+          enum: [r7e, promoavatar, xviral, degrau-2, degrau-3]
+          description: Conceito INEMA de referência (funcional, não prova de código).
+        description: { type: string }
+        executionReady:
+          type: boolean
+          description: True SOMENTE com executor real ligado. False = planeia/valida estruturas; não executa.
+        requiresApproval:
+          type: boolean
+          description: Exige aprovação humana antes de qualquer efeito.
+
+    AutomationsResponse:
+      type: object
+      required: [automations, note]
+      properties:
+        automations:
+          type: array
+          items: { $ref: '#/components/schemas/AutomationCapability' }
+        note:
+          type: string
+          example: "executionReady: false = planeia/valida estruturas; não executa. Publicação desativada até autorização explícita."
+
   responses:
     Unauthorized:
       description: Não autenticado
@@ -286,7 +467,17 @@ paths:
   /tools:
     get:
       summary: Lista o catálogo de tools
-      description: Requer scope tools:read. Sem Supabase configurado → 503 honesto (sem fallback inventado).
+      description: |
+        Requer scope tools:read. Sem Supabase configurado → 503 honesto
+        (sem fallback inventado).
+
+        FASE 2A (C1) — isolamento entre organizações: a lista é SEMPRE
+        filtrada pela org resolvida. Sessão: `orgId` obrigatório (sem ele
+        → 400 VALIDATION; org sem membership → 403). API key: vê apenas
+        a org da chave (`orgId` divergente → 403). Tools são linhas por
+        org — não existe leitura global.
+      parameters:
+        - $ref: '#/components/parameters/OrgId'
       responses:
         '200':
           description: Catálogo
@@ -296,18 +487,26 @@ paths:
                 type: object
                 properties:
                   tools: { type: array, items: { $ref: '#/components/schemas/Tool' } }
+        '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
         '429': { $ref: '#/components/responses/RateLimited' }
         '503': { $ref: '#/components/responses/NotConfigured' }
 
   /tools/{id}:
     get:
       summary: Detalhe de uma tool
+      description: |
+        Mesmo isolamento da lista (C1): tool de outra org responde 404
+        INDISTINTO de tool inexistente (sem vazar existência nem nome).
+        IDs de adapters em código (contrato global, sem dados de org)
+        continuam legíveis por qualquer org autenticada.
       parameters:
         - name: id
           in: path
           required: true
           schema: { type: string }
+        - $ref: '#/components/parameters/OrgId'
       responses:
         '200':
           description: Tool
@@ -317,7 +516,9 @@ paths:
                 type: object
                 properties:
                   tool: { $ref: '#/components/schemas/Tool' }
+        '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '429': { $ref: '#/components/responses/RateLimited' }
         '503': { $ref: '#/components/responses/NotConfigured' }
@@ -509,7 +710,14 @@ paths:
   /approvals/{id}/decision:
     post:
       summary: Decide sobre um job pendente (approve → QUEUED, reject → CANCELLED)
-      description: Sessão de usuário exige papel owner/admin. O aprovador é registrado em auditoria.
+      description: |
+        Decisão EXCLUSIVAMENTE humana (FASE 2B, C4): só sessão de
+        usuário com papel owner/admin na org decide. Chaves de API
+        (m2m) são recusadas com 403 MESMO com o scope
+        `approvals:decide` — a separação humano/máquina é garantida em
+        código (`requireHumanSession`), não só documentalmente. O scope
+        continua válido para a LEITURA da fila (GET /approvals).
+        O aprovador é registrado em auditoria.
       parameters:
         - name: id
           in: path
@@ -537,3 +745,93 @@ paths:
         '429': { $ref: '#/components/responses/RateLimited' }
         '503': { $ref: '#/components/responses/NotConfigured' }
 
+
+  /athena/missions:
+    post:
+      summary: Recebe uma missão da ATHENA Control (cria o job, idempotente)
+      description: |
+        Auth: Bearer <api key> + anti-replay, scope `jobs:write`. A org é
+        a da chave (`org_id` divergente no payload → 403).
+
+        Fluxo: valida o payload (400 VALIDATION se inválido) → resolve
+        `requires_human_approval` contra o contrato da tool (divergência
+        → 409 CONFLICT, sem ajuste silencioso) → cria o job de forma
+        idempotente: `mission_id` é preservado como idempotencyKey —
+        reenvio do mesmo `mission_id` devolve o job original
+        (200 + `deduplicated: true`; primeira vez: 201). Se a missão
+        exige aprovação humana, o job cai em PENDING_APPROVAL e a
+        resposta aponta o endpoint de decisão (decisão sempre humana —
+        ver /approvals/{id}/decision).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateMissionRequest' }
+      responses:
+        '201':
+          description: Missão aceite; job criado
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CreateMissionResponse' }
+        '200':
+          description: "Replay idempotente (deduplicated: true) — job original retornado"
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CreateMissionResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '503': { $ref: '#/components/responses/NotConfigured' }
+
+  /athena/missions/{id}:
+    get:
+      summary: Estado sincronizado de uma missão
+      description: |
+        Auth: Bearer <api key> + anti-replay, scope `jobs:read`. O `{id}`
+        é o `mission_id` gerado pela Athena (preservado como
+        idempotencyKey do job). A resposta traz o estado no vocabulário
+        Athena (`status`) + o estado interno do Hub (`hub_status`), a
+        correlação missão↔job e, em estado terminal, resultado e assets
+        (vazio honesto quando nada existe). Missão inexistente → 404.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+          description: mission_id da Athena (UUID).
+        - $ref: '#/components/parameters/OrgId'
+      responses:
+        '200':
+          description: Estado da missão
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  mission: { $ref: '#/components/schemas/MissionResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '503': { $ref: '#/components/responses/NotConfigured' }
+
+  /automations:
+    get:
+      summary: Catálogo de capacidades de automação (somente leitura)
+      description: |
+        Scope `tools:read`. Devolve as capacidades declaradas em código
+        (lib/automations) com estados honestos: `executionReady: false`
+        significa que a automação planeia/valida estruturas — NÃO
+        executa. Publicação desativada até autorização explícita.
+      responses:
+        '200':
+          description: Catálogo de automações
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AutomationsResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '429': { $ref: '#/components/responses/RateLimited' }
