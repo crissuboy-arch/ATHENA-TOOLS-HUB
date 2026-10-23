@@ -4,12 +4,18 @@
  * registrado em código, retorna a representação honesta do contrato
  * (status 'in-development') — sem inventar dados de catálogo.
  * Inclui `integrationStatus`: 'ready' só com executor real conectado.
+ *
+ * FASE 2A (C1) — isolamento entre organizações: a linha é procurada SEMPRE
+ * dentro da org resolvida (resolveOrgScope). Tool de outra org e tool
+ * inexistente produzem a mesma resposta (404) — indistintas. O fallback de
+ * adapter em código não é dado de nenhuma org (é o contrato público do
+ * adaptador), por isso continua acessível a qualquer autenticado.
  */
 
 import type { NextRequest } from "next/server";
 import { HubError, newRequestId } from "@/lib/errors";
 import { apiError, apiJson } from "@/lib/api-response";
-import { authenticate, requireScope } from "@/lib/api-auth";
+import { authenticate, requireScope, resolveOrgScope } from "@/lib/api-auth";
 import { checkRateLimit, rateLimitIdentity } from "@/lib/rate-limit";
 import { getSupabaseAdmin, isSupabaseConfigured } from "@/lib/auth";
 import { toolRegistry } from "@/lib/adapters/index";
@@ -28,15 +34,21 @@ export async function GET(
     }
     const auth = await authenticate(request);
     requireScope(auth, "tools:read");
+    const orgId = await resolveOrgScope(
+      auth,
+      request.nextUrl.searchParams.get("orgId"),
+    );
     if (!isSupabaseConfigured()) throw HubError.notConfigured();
 
     const { id } = await params;
     const supabase = getSupabaseAdmin();
     // Capabilities reais vêm embutidas de `tool_capabilities` (ver toToolDTO).
+    // FASE 2A (C1): id + org_id — uma tool de outra org é invisível aqui.
     const { data, error } = await supabase
       .from("tools")
       .select("*, tool_capabilities(name)")
       .eq("id", id)
+      .eq("org_id", orgId)
       .maybeSingle();
     if (error) throw new HubError("INTERNAL", "Falha ao carregar a tool.", 500);
 
