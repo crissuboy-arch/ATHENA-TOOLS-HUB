@@ -64,7 +64,19 @@ const ORG_B = "22222222-2222-4222-8222-222222222222";
 const TOOL_A_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const TOOL_B_ID = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 
-const TOOL_ROWS = [
+interface ToolRow {
+  id: string;
+  org_id: string;
+  slug: string;
+  name: string;
+  description: string | null;
+  state: string;
+  updated_at: string;
+  tool_capabilities: Array<{ name: string }>;
+  [key: string]: unknown;
+}
+
+const TOOL_ROWS: ToolRow[] = [
   {
     id: TOOL_A_ID,
     org_id: ORG_A,
