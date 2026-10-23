@@ -21,6 +21,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { generateApiKey, verifyApiKey } from "@/lib/api-keys";
 
 interface CapturedFilter {
+  table: string;
   column: string;
   value: unknown;
 }
@@ -48,7 +49,10 @@ const { queryState, fakeSupabase } = vi.hoisted(() => {
         select() {
           return {
             eq(column: string, value: unknown) {
-              queryState.filters.push({ column, value });
+              // FASE 2D: o filtro fica atribuído à tabela do from() — a
+              // verificação consulta api_keys ANTES do legado, e os testes
+              // distinguem os dois caminhos.
+              queryState.filters.push({ table, column, value });
               const state = queryState;
               return {
                 then(
@@ -69,14 +73,18 @@ const { queryState, fakeSupabase } = vi.hoisted(() => {
   return { queryState, fakeSupabase };
 });
 
+/** Filtros capturados de UMA tabela (desde a 2D há dois caminhos). */
+function filtersFor(table: string): CapturedFilter[] {
+  return queryState.filters.filter((f) => f.table === table);
+}
+
 vi.mock("@/lib/auth", () => ({
   isSupabaseConfigured: () => queryState.configured,
   getSupabaseAdmin: () => fakeSupabase as unknown as SupabaseClient,
 }));
 
-/** Colunas reais de uma tabela segundo a migration 0001 (fonte: schema real). */
-function realTableColumns(table: string): string[] {
-  const sql = readFileSync("supabase/migrations/0001_core.sql", "utf8");
+/** Colunas reais de uma tabela segundo o SQL de uma migration (schema real). */
+function tableColumnsFromSql(sql: string, table: string): string[] {
   const block = new RegExp(
     `CREATE TABLE IF NOT EXISTS public\\.${table} \\(([\\s\\S]*?)\\n\\);`,
   ).exec(sql)?.[1];
@@ -88,10 +96,19 @@ function realTableColumns(table: string): string[] {
       (line) =>
         line.length > 0 &&
         !line.startsWith("--") &&
-        !line.startsWith("CONSTRAINT"),
+        !line.startsWith("CONSTRAINT") &&
+        !line.startsWith("PRIMARY"),
     )
     .map((line) => line.split(/\s+/)[0].replace(/["`,]/g, ""))
     .filter(Boolean);
+}
+
+/** Colunas reais de uma tabela segundo a migration 0001 (fonte: schema real). */
+function realTableColumns(table: string): string[] {
+  return tableColumnsFromSql(
+    readFileSync("supabase/migrations/0001_core.sql", "utf8"),
+    table,
+  );
 }
 
 beforeEach(() => {
@@ -119,10 +136,25 @@ describe("verifyApiKey — filtro alinhado ao schema real", () => {
       orgId: "org-1",
       scopes: ["tools:read"],
       integrationId: "int-1",
+      keyHash,
+      source: "legacy",
     });
+    // FASE 2D: a tabela nova é consultada PRIMEIRO (por key_hash, coluna
+    // real da 0011) e o legado continua a ser a rede de segurança.
+    const apiKeysFilters = filtersFor("api_keys");
+    expect(apiKeysFilters).toHaveLength(1);
+    expect(apiKeysFilters[0].column).toBe("key_hash");
+    expect(apiKeysFilters[0].value).toBe(keyHash);
+    const apiKeysColumns = tableColumnsFromSql(
+      readFileSync("supabase/migrations/0011_api_keys.sql", "utf8"),
+      "api_keys",
+    );
+    expect(apiKeysColumns).toContain("key_hash");
+
     expect(queryState.table).toBe("integrations");
-    expect(queryState.filters).toHaveLength(1);
-    const [filter] = queryState.filters;
+    const integrationFilters = filtersFor("integrations");
+    expect(integrationFilters).toHaveLength(1);
+    const [filter] = integrationFilters;
     expect(filter.value).toBe("connected");
 
     // A coluna filtrada TEM de existir no schema real — é aqui que o drift
@@ -137,7 +169,7 @@ describe("verifyApiKey — filtro alinhado ao schema real", () => {
     const { rawKey } = generateApiKey();
     queryState.rows = [];
     expect(await verifyApiKey(rawKey)).toBeNull();
-    expect(queryState.filters[0]?.column).toBe("state");
+    expect(filtersFor("integrations")[0]?.column).toBe("state");
   });
 
   it("retorna null quando o Supabase devolve erro", async () => {

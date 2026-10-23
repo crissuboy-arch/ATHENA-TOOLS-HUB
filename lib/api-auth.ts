@@ -15,12 +15,20 @@ import type { NextRequest } from "next/server";
 import { HubError } from "./errors";
 import { getSession, requireOrgRole, type OrgRole } from "./auth";
 import { checkReplayProtection, sha256Hex, verifyApiKey } from "./api-keys";
+import { enforceM2mTransportSecurity } from "./api-signing";
 
 export type ApiScope = "tools:read" | "jobs:read" | "jobs:write" | "approvals:decide";
 
 export type ApiAuthContext =
   | { kind: "user"; userId: string }
-  | { kind: "m2m"; orgId: string; scopes: ApiScope[]; integrationId: string };
+  | {
+      kind: "m2m";
+      orgId: string;
+      scopes: ApiScope[];
+      integrationId: string;
+      /** FASE 2D — presente quando a chave vive na tabela `api_keys`. */
+      apiKeyId?: string;
+    };
 
 function bearerToken(request: NextRequest): string | null {
   const auth = request.headers.get("authorization") ?? "";
@@ -36,13 +44,21 @@ export async function authenticate(request: NextRequest): Promise<ApiAuthContext
     if (!identity) {
       throw HubError.unauthorized("Chave de API inválida ou inativa.");
     }
-    // Anti-replay obrigatório para chaves de API.
-    checkReplayProtection(request.headers, sha256Hex(token));
+    const fingerprint = sha256Hex(token);
+    if (identity.apiKeyId) {
+      // FASE 2D (C3): chave da tabela api_keys — timestamp → assinatura
+      // HMAC → nonce persistente (com degradação honesta pré-0011).
+      await enforceM2mTransportSecurity(request, identity, fingerprint);
+    } else {
+      // Caminho legado: anti-replay em memória (comportamento intacto).
+      checkReplayProtection(request.headers, fingerprint);
+    }
     return {
       kind: "m2m",
       orgId: identity.orgId,
       scopes: identity.scopes as ApiScope[],
       integrationId: identity.integrationId,
+      apiKeyId: identity.apiKeyId,
     };
   }
 
@@ -76,6 +92,24 @@ export function requireHumanSession(
   if (ctx.kind !== "user") {
     throw HubError.forbidden(
       "Decisões de aprovação exigem sessão humana (owner/admin). Chaves de API não podem aprovar nem rejeitar jobs, mesmo com o scope approvals:decide.",
+    );
+  }
+}
+
+/**
+ * FASE 2D (C5) — gestão de credenciais é EXCLUSIVA de sessões humanas:
+ * nenhuma chave de API emite, lista ou revoga chaves (nem as suas). É o
+ * mesmo princípio da C4 aplicado à gestão de chaves: se uma chave pudesse
+ * emitir chaves, uma credencial comprometida reproduzia-se. O papel
+ * (owner/admin na org da integração) é exigido a seguir, via
+ * `resolveOrgScope`, como nas decisões de aprovação.
+ */
+export function requireSessionUser(
+  ctx: ApiAuthContext,
+): asserts ctx is Extract<ApiAuthContext, { kind: "user" }> {
+  if (ctx.kind !== "user") {
+    throw HubError.forbidden(
+      "Gestão de chaves de API exige sessão humana (owner/admin). Chaves de API não podem emitir, listar nem revogar credenciais.",
     );
   }
 }

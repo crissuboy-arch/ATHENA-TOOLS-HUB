@@ -51,6 +51,13 @@ vi.mock("@/lib/api-keys", () => ({
   verifyApiKey: mocks.verifyApiKey,
   checkReplayProtection: () => {},
   sha256Hex: (s: string) => `hash:${s}`,
+  // FASE 2D: lib/api-signing (importado por lib/api-auth) resolve estes
+  // nomes do módulo real; no mock ficam inertes — as identidades falsas
+  // não têm apiKeyId, logo o caminho novo nunca é executado aqui.
+  parseReplayHeaders: () => {
+    throw new Error("parseReplayHeaders não devia ser chamado neste teste");
+  },
+  isMissingTableError: () => false,
 }));
 
 import { HubError } from "@/lib/errors";
