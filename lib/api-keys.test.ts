@@ -63,6 +63,29 @@ const { queryState, fakeSupabase } = vi.hoisted(() => {
                   if (state.error) resolve({ data: null, error: state.error });
                   else resolve({ data: state.rows, error: null });
                 },
+                // REVISÃO PRÉ-G2: o mundo simulado por esta suite é
+                // PRÉ-0011 — `api_keys` ainda não existe. Antes, o fake
+                // não tinha maybeSingle e a consulta morria com um
+                // TypeError que o soft-fail antigo mascarava como
+                // "indisponível"; com a classificação explícita de
+                // erros (só tabela comprovadamente inexistente abre o
+                // legado), o fake declara honestamente o mundo que
+                // simula: PGRST205. Nenhuma asserção desta suite muda —
+                // o comportamento esperado sempre foi o pré-0011.
+                maybeSingle: async () => {
+                  if (table === "api_keys") {
+                    return {
+                      data: null,
+                      error: {
+                        code: "PGRST205",
+                        message:
+                          "Could not find the table in the schema cache",
+                      },
+                    };
+                  }
+                  if (state.error) return { data: null, error: state.error };
+                  return { data: state.rows[0] ?? null, error: null };
+                },
               };
             },
           };

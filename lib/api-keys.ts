@@ -15,8 +15,13 @@
  *      nonce persistente) é aplicada em lib/api-signing.ts.
  *   2. Caminho legado: varredura de `integrations.config.apiKeyHash`
  *      (nonce em memória, por instância). Continua a ser o comportamento
- *      enquanto a 0011 não for aplicada — a ausência da tabela é detetada
- *      e cai-se aqui sem partir nada. Desligável com
+ *      enquanto a 0011 não for aplicada — MAS só quando a ausência da
+ *      tabela está COMPROVADA (42P01/PGRST205/"relation does not
+ *      exist"). Qualquer outro erro de leitura da tabela nova (conexão,
+ *      permissão, timeout, exceção do cliente) é FAIL-CLOSED: o pedido
+ *      falha com 500 e NUNCA é rebaixado para o legado — um erro de BD a
+ *      meio da transição não pode enfraquecer a autenticação em silêncio
+ *      (REVISÃO PRÉ-G2, 2026-10-23). Desligável com
  *      HUB_API_KEYS_LEGACY_FALLBACK=false (fim da transição, gate G5).
  *   Uma chave ENCONTRADA na tabela nova nunca cai para o legado: revogada
  *   ou expirada lá = recusada, ponto final.
@@ -131,8 +136,17 @@ type ApiKeysLookup =
   | { status: "rejected" }
   /** Sem linha nesta tabela: pode ser uma chave legada. */
   | { status: "absent" }
-  /** Tabela inexistente (pré-0011) ou leitura falhou: mundo de transição. */
-  | { status: "unavailable" };
+  /**
+   * Tabela COMPROVADAMENTE inexistente (isMissingTableError): mundo
+   * pré-0011 — é o ÚNICO erro que autoriza o fallback legado.
+   */
+  | { status: "table-missing" }
+  /**
+   * Qualquer outro erro de leitura (conexão, permissão, timeout, erro
+   * genérico de consulta, exceção do cliente): FAIL-CLOSED. O chamador
+   * recusa o pedido com 500 — nunca abre o caminho legado.
+   */
+  | { status: "db-error" };
 
 /** Auditoria best-effort de uma chave da tabela nova apresentada já morta. */
 async function auditRejectedKey(
@@ -158,8 +172,10 @@ async function auditRejectedKey(
 /**
  * Caminho novo (C5): lookup O(1) por `key_hash` (UNIQUE) na tabela
  * `api_keys`. Nunca lança: os estados possíveis voltam em ApiKeysLookup
- * para o chamador decidir (rejeitado é decisivo; ausente/indisponível
- * segue para o fallback legado durante a transição).
+ * para o chamador decidir. A classificação do erro é a da REVISÃO
+ * PRÉ-G2: só a tabela comprovadamente inexistente (isMissingTableError)
+ * é mundo pré-0011; TODOS os outros erros — devolvidos ou lançados —
+ * são "db-error" e o chamador falha fechado, sem tocar no legado.
  */
 async function verifyViaApiKeysTable(
   supabase: ReturnType<typeof getSupabaseAdmin>,
@@ -174,10 +190,16 @@ async function verifyViaApiKeysTable(
       )
       .eq("key_hash", keyHash)
       .maybeSingle();
-    if (error) return { status: "unavailable" };
+    if (error) {
+      return isMissingTableError(error)
+        ? { status: "table-missing" }
+        : { status: "db-error" };
+    }
     row = (data as ApiKeyRow | null) ?? null;
   } catch {
-    return { status: "unavailable" };
+    // Exceção do cliente (rede, fetch abortado, …): não prova mundo
+    // pré-0011 — é indisponibilidade real, tratada como db-error.
+    return { status: "db-error" };
   }
   if (!row) return { status: "absent" };
 
@@ -279,11 +301,15 @@ async function verifyViaLegacyIntegrations(
 }
 
 /**
- * Valida a chave crua. Ordem (transição C5, spec §4.4):
+ * Valida a chave crua. Ordem (transição C5, spec §4.4 + REVISÃO PRÉ-G2):
  *   1. Tabela `api_keys` — identidade ou rejeição DECISIVA (revogada/
  *      expirada nunca ressuscita pelo caminho legado).
- *   2. Sem linha / tabela inexistente → fallback legado (flag
- *      HUB_API_KEYS_LEGACY_FALLBACK, ligada por omissão nesta release).
+ *   2. Sem linha, ou tabela COMPROVADAMENTE inexistente → fallback
+ *      legado (flag HUB_API_KEYS_LEGACY_FALLBACK, ligada por omissão
+ *      nesta release).
+ *   3. Qualquer outro erro de leitura da tabela → LANÇA HubError 500
+ *      (fail-closed): um erro de BD não é "chave inválida" (401 seria
+ *      mentir sobre a causa) nem pode abrir o caminho legado.
  * Retorna a identidade vinculada ou null (401 genérico no chamador).
  */
 export async function verifyApiKey(
@@ -296,6 +322,13 @@ export async function verifyApiKey(
   const viaTable = await verifyViaApiKeysTable(supabase, keyHash);
   if (viaTable.status === "identity") return viaTable.identity;
   if (viaTable.status === "rejected") return null;
+  if (viaTable.status === "db-error") {
+    throw new HubError(
+      "INTERNAL",
+      "Não foi possível verificar a chave de API (erro da base de dados).",
+      500,
+    );
+  }
 
   if (!isLegacyFallbackEnabled()) return null;
   return verifyViaLegacyIntegrations(supabase, keyHash);

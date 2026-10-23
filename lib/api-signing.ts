@@ -22,11 +22,14 @@
  *   - Anti-replay persistente (§3): insert-first em api_request_nonces —
  *     a PK (api_key_id, nonce) impõe a unicidade atomicamente, em todas
  *     as instâncias. DEGRADAÇÃO HONESTA: enquanto a migration 0011 não
- *     for aplicada (tabela inexistente), cai-se para o store em memória
- *     de lib/api-keys.ts e o resultado diz `nonceStore:
+ *     for aplicada (tabela COMPROVADAMENTE inexistente — 42P01/
+ *     PGRST205/"relation does not exist"), cai-se para o store em
+ *     memória de lib/api-keys.ts e o resultado diz `nonceStore:
  *     "memory-fallback"` — a proteção por instância continua, a
- *     persistente NÃO é fingida. Outros erros de BD falham FECHADOS
- *     (500): sem conseguir registar o nonce, o pedido não é processado.
+ *     persistente NÃO é fingida. Todos os outros erros de BD e TODAS as
+ *     exceções inesperadas falham FECHADOS (500) — REVISÃO PRÉ-G2:
+ *     uma exceção não prova mundo pré-0011, e degradar em silêncio
+ *     esconderia uma falha real atrás de um store por instância.
  *
  * Ordem de validação (spec §3.2): timestamp → assinatura → nonce.
  * Falhas de assinatura devolvem 401 genérico (UNAUTHORIZED) — sem oráculo
@@ -184,10 +187,16 @@ async function auditSignatureMissing(identity: ApiKeyIdentity): Promise<void> {
  * Insert-first do nonce na tabela persistente.
  * - Sucesso → "persistent".
  * - Conflito de PK (23505) → REPLAY_DETECTED (401), como no caminho legado.
- * - Tabela inexistente (pré-0011) → degradação graciosa para o store em
- *   memória (mesma semântica por instância) → "memory-fallback".
- * - Qualquer outro erro → 500 fail-closed: sem registo do nonce, o pedido
- *   não avança.
+ * - Tabela COMPROVADAMENTE inexistente (pré-0011, isMissingTableError)
+ *   → degradação graciosa para o store em memória (mesma semântica por
+ *   instância) → "memory-fallback". É o ÚNICO caso que degrada
+ *   (REVISÃO PRÉ-G2, 2026-10-23).
+ * - Qualquer outro erro — genérico de BD, permissão, OU exceção
+ *   inesperada do cliente — → 500 fail-closed: uma falha depois da
+ *   migration (ou uma exceção que não prova mundo pré-0011) nunca pode
+ *   esconder-se atrás do store em memória, que é por instância e
+ *   efémero. Sem registo do nonce, o pedido não avança — e o nonce
+ *   também NÃO fica registado em memória como efeito secundário.
  */
 async function registerNonce(
   request: NextRequest,
@@ -221,9 +230,9 @@ async function registerNonce(
     ) {
       throw new HubError("REPLAY_DETECTED", "Nonce já utilizado (replay).", 401);
     }
-    if (insertThrew || isMissingTableError(insertError)) {
+    if (!insertThrew && isMissingTableError(insertError)) {
       console.warn(
-        "[api-signing] api_request_nonces indisponível (migration 0011 por aplicar?) — anti-replay degradado para memória (por instância).",
+        "[api-signing] api_request_nonces inexistente (migration 0011 por aplicar) — anti-replay degradado para memória (por instância).",
       );
       checkReplayProtection(request.headers, keyFingerprint);
       return "memory-fallback";
