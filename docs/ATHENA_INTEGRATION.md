@@ -37,7 +37,26 @@ quando o Supabase está configurado; sem Supabase, libera tudo com o header
 
 ## Autenticação machine-to-machine
 
-### Emissão de chaves (fora do MVP — processo manual documentado)
+### Emissão de chaves
+
+**Caminho atual (FASE 2D, C5) — por endpoint, depois da migration 0011:**
+
+`POST /api/v1/integrations/{integrationId}/api-keys` com **sessão humana
+owner/admin** da org (chaves de API recebem 403 — credenciais não gerem
+credenciais). Corpo: `{ label, scopes?, expiresInDays?, withSigningSecret?,
+replacesKeyId? }`. A resposta (201) traz a chave crua e o segredo de
+assinatura **uma única vez**; a BD guarda só o hash (tabela `api_keys`) e
+a referência do segredo. Expiração por omissão: **90 dias**. Revogação:
+`DELETE /api/v1/integrations/{integrationId}/api-keys/{keyId}` (imediata,
+idempotente). Listagem de metadados (nunca o hash): `GET` na mesma rota.
+Rotação: emitir com `replacesKeyId` e revogar a antiga.
+
+⚠️ **Estado:** a migration `0011_api_keys.sql` está **preparada, não
+aplicada** (gate G2). Sem ela, estes endpoints devolvem `501` honesto e
+vale o processo legado abaixo. Plano completo:
+`docs/FASE2D_MIGRATION_ROLLBACK_PLAN.md`.
+
+**Processo legado (transição — mundo pré-0011 e fallback):**
 
 1. Gerar o par com `generateApiKey()` de `lib/api-keys.ts`:
    `hub_live_<64 hex>` (crua) + SHA-256 (hash).
@@ -51,11 +70,17 @@ A chave crua nunca persiste em banco, logs ou código.
 
 ### Verificação (lado Hub)
 
-`verifyApiKey(rawKey)` → `{ orgId, scopes, integrationId } | null`.
-O hash é comparado em tempo constante contra as integrações com
-`state='connected'` — as únicas que a query lê; qualquer outro estado
-(ou chave desconhecida) devolve `null` → 401 indistinguível.
-Upgrade documentado: tabela dedicada `api_keys(key_hash PK, …)` com índice.
+`verifyApiKey(rawKey)` → `{ orgId, scopes, integrationId, … } | null`,
+em dois caminhos (FASE 2D):
+
+1. **Tabela `api_keys`** (pós-0011): lookup O(1) por hash indexado.
+   Revogada ou expirada = `null` **decisivo** (o legado não ressuscita a
+   chave). A identidade inclui `apiKeyId` e `signingSecretRef`.
+2. **Legado** (fallback, `HUB_API_KEYS_LEGACY_FALLBACK`): o hash é
+   comparado em tempo constante contra as integrações com
+   `state='connected'` — as únicas que a query lê.
+
+Qualquer falha devolve `null` → 401 indistinguível.
 
 ### Anti-replay (obrigatório para API keys)
 
@@ -67,9 +92,32 @@ X-Nonce: 3f9a2c1e-...             # uuid único por requisição
 ```
 
 Nonces repetidos por chave → `401 REPLAY_DETECTED`. Timestamps fora da
-janela → `401`. O rastreio é em memória com TTL de 10 min
-(ver `lib/api-keys.ts`); em multi-instância, migrar para Redis
-(mesma semântica: SETNX com TTL).
+janela → `401`. Para chaves da tabela `api_keys`, o nonce é registado
+**na base de dados antes de processar** (insert-first, atómico entre
+instâncias — tabela `api_request_nonces`); para chaves legadas, o
+rastreio continua em memória com TTL de 10 min (por instância). Se a
+0011 ainda não estiver aplicada, as chaves da tabela comportam-se como
+legadas neste ponto — degradação declarada, nunca fingida.
+
+### Assinatura HMAC (FASE 2D, C3 — Opção A)
+
+Chaves da tabela `api_keys` emitidas com segredo de assinatura devem
+assinar cada pedido:
+
+```
+X-Signature: <hex minúsculo de HMAC-SHA256(segredo, string canónica)>
+X-Key-Id: <id da chave>            # opcional; se vier, tem de ser a chave apresentada
+```
+
+String canónica: `METHOD\nPATH+QUERY(ordenada por chave)\n
+X-Request-Timestamp\nX-Nonce\nSHA256_HEX(corpo)` — definição completa e
+vetor de teste em `docs/FASE2C_C3_C5_SPEC.md` §2. O segredo
+(`hub_sign_…`) é **dedicado** e vive nos cofres dos dois lados; o Hub
+guarda só a referência (= id da chave) e resolve o valor em
+`HUB_SIGNING_SECRETS_JSON`. Rollout: a assinatura é opcional mas, quando
+apresentada, é sempre validada (inválida → 401 genérico); torna-se
+obrigatória com `HUB_REQUIRE_SIGNATURES=true` (gate G4, quando a Athena
+já assinar tudo).
 
 ### Scopes
 

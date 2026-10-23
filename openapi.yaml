@@ -14,6 +14,13 @@ info:
     a C1) e `/approvals/{id}/decision` (decisão exclusivamente humana
     desde a C4: chaves de API são recusadas com 403 mesmo com o scope
     `approvals:decide`). Nada foi renomeado nem removido.
+
+    FASE 2D (C3+C5): gestão de chaves de API por endpoint
+    (`/integrations/{integrationId}/api-keys`) — só sessão humana
+    owner/admin — e assinatura HMAC opcional (`X-Signature`, `X-Key-Id`)
+    para chaves da tabela `api_keys`. Estado honesto: os endpoints de
+    gestão devolvem 501 enquanto a migration 0011 (preparada, não
+    aplicada — gate G2) não existir na base.
 servers:
   - url: https://tools-hub.exemplo.com/api/v1
     description: Produção (placeholder — sem deploy autorizado no MVP)
@@ -35,6 +42,11 @@ components:
         Exige também os headers anti-replay:
         - X-Request-Timestamp: unix seconds (±5 min)
         - X-Nonce: uuid único por requisição
+        Para chaves da tabela `api_keys` (FASE 2D), há ainda a assinatura:
+        - X-Signature: HMAC-SHA256 hex da string canónica (spec §2) —
+          opcional até `HUB_REQUIRE_SIGNATURES=true`; quando presente, é
+          sempre validada
+        - X-Key-Id: id público da chave (opcional; tem de coincidir)
     session:
       type: apiKey
       in: cookie
@@ -380,6 +392,26 @@ components:
           type: string
           example: "executionReady: false = planeia/valida estruturas; não executa. Publicação desativada até autorização explícita."
 
+    ApiKeyMetadata:
+      type: object
+      description: Metadados de uma chave de API (tabela api_keys) — NUNCA inclui o hash nem qualquer segredo.
+      required: [id, label, scopes, createdAt, expiringSoon]
+      properties:
+        id: { type: string, format: uuid, description: Id público da chave (= X-Key-Id e a referência do segredo no cofre). }
+        label: { type: string }
+        scopes:
+          type: array
+          items: { type: string }
+        signingSecretRef: { type: [string, 'null'] }
+        createdAt: { type: string, format: date-time }
+        expiresAt: { type: [string, 'null'], format: date-time }
+        lastUsedAt: { type: [string, 'null'], format: date-time }
+        revokedAt: { type: [string, 'null'], format: date-time }
+        replacedById: { type: [string, 'null'], format: uuid }
+        expiringSoon:
+          type: boolean
+          description: Ativa e a expirar em ≤14 dias (sinal para rodar antes do corte).
+
   responses:
     Unauthorized:
       description: Não autenticado
@@ -420,6 +452,16 @@ components:
             error:
               code: SUPABASE_NOT_CONFIGURED
               message: Supabase não configurado. Defina as variáveis de ambiente do Supabase para habilitar este recurso.
+              requestId: 3f9a2c1e-5b4d-4a8f-9c2e-7d1b3f5a9c0e
+    NotImplemented:
+      description: 'Funcionalidade implementada mas ainda não ativa nesta base (ex.: migration 0011 preparada e não aplicada)'
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+          example:
+            error:
+              code: NOT_IMPLEMENTED
+              message: A tabela api_keys ainda não existe nesta base — migration 0011 preparada, não aplicada (gate G2).
               requestId: 3f9a2c1e-5b4d-4a8f-9c2e-7d1b3f5a9c0e
     Forbidden:
       description: Autenticado, mas sem scope/papel para a ação
@@ -835,3 +877,118 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '429': { $ref: '#/components/responses/RateLimited' }
+
+  /integrations/{integrationId}/api-keys:
+    parameters:
+      - name: integrationId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      summary: Emitir uma chave de API para a integração (FASE 2D, C5)
+      description: |
+        SÓ sessão humana com papel owner/admin na org dona da integração
+        — chaves de API recebem 403 (credenciais não gerem credenciais).
+        A resposta traz `rawKey` e `signingSecret` UMA ÚNICA VEZ; a base
+        guarda apenas o hash e a referência do segredo. Expiração por
+        omissão: 90 dias. `replacesKeyId` liga a rotação (a chave antiga
+        NÃO é revogada automaticamente). Pré-0011: 501.
+      security:
+        - session: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [label]
+              properties:
+                label: { type: string, minLength: 1, maxLength: 120 }
+                scopes:
+                  type: array
+                  items:
+                    type: string
+                    enum: [tools:read, jobs:read, jobs:write, approvals:decide]
+                  minItems: 1
+                  maxItems: 4
+                  description: Omissos = [tools:read, jobs:read, jobs:write]. approvals:decide nunca decide aprovações (C4).
+                expiresInDays: { type: integer, minimum: 1, maximum: 3650, description: Omisso = 90. }
+                withSigningSecret: { type: boolean, description: Omisso = true (Opção A). }
+                replacesKeyId: { type: string, format: uuid }
+      responses:
+        '201':
+          description: Chave emitida (segredos exibidos uma única vez)
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [apiKey, rawKey, signingSecret]
+                properties:
+                  apiKey: { $ref: '#/components/schemas/ApiKeyMetadata' }
+                  rawKey: { type: string, description: Valor cru da chave — nunca mais é exibido. }
+                  signingSecret: { type: [string, 'null'], description: Segredo de assinatura (Opção A) — nunca mais é exibido. }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '501': { $ref: '#/components/responses/NotImplemented' }
+    get:
+      summary: Listar metadados das chaves da integração (sem hashes)
+      description: |
+        SÓ sessão humana owner/admin. Devolve metadados apenas — o hash
+        da chave nunca é selecionado nem exposto.
+      security:
+        - session: []
+      responses:
+        '200':
+          description: Lista de chaves (metadados)
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [apiKeys]
+                properties:
+                  apiKeys:
+                    type: array
+                    items: { $ref: '#/components/schemas/ApiKeyMetadata' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '501': { $ref: '#/components/responses/NotImplemented' }
+
+  /integrations/{integrationId}/api-keys/{keyId}:
+    parameters:
+      - name: integrationId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+      - name: keyId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    delete:
+      summary: Revogar uma chave de API (imediato, idempotente)
+      description: |
+        SÓ sessão humana owner/admin. A revogação tem efeito imediato no
+        lookup de autenticação e é irreversível (rotação = emitir nova).
+        Revogar uma chave já revogada devolve os mesmos metadados (200).
+        Chave de outra integração/org → 404.
+      security:
+        - session: []
+      responses:
+        '200':
+          description: Chave revogada (metadados)
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [apiKey]
+                properties:
+                  apiKey: { $ref: '#/components/schemas/ApiKeyMetadata' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '501': { $ref: '#/components/responses/NotImplemented' }
