@@ -99,6 +99,14 @@ obrigatória e registo em `audit_logs`). Dar `approvals:decide` a um agente
 autónomo sem supervisão viola a regra dela — só com autorização explícita
 dela, e mesmo assim com âmbito limitado.
 
+> **Atualização FASE 2B (C4):** a recusa deixou de ser só recomendação
+> documental. Desde esta fase, o código recusa decisões vindas de chaves
+> de API MESMO com o scope concedido (`requireHumanSession` em
+> `lib/api-auth.ts` → 403 em `POST /api/v1/approvals/{id}/decision`).
+> A recomendação acima mantém-se como defesa em profundidade (não dar o
+> scope reduz superfície), mas já não é a única barreira. O scope
+> continua útil para a Athena LER a fila de aprovações pendentes.
+
 ---
 
 ## 4. Validar o ciclo missão → job → resultado (ambiente de teste)
@@ -147,7 +155,8 @@ fresh | head -c 400; echo
 
 # --- 5) APROVAÇÃO (humana, na UI ou via sessão owner/admin) ---
 # UI → Aprovações → aprovar com justificativa → job vai a QUEUED.
-# Via API só com scope approvals:decide (não concedido no MVP — ver §3).
+# Via API: SÓ com sessão humana owner/admin. Com chave de API é
+# impossível desde a Fase 2B (C4): 403 mesmo com approvals:decide (§3).
 
 # --- 6) RESULTADO: ler events e assets ---
 # GET /api/v1/jobs/$JOB_ID/events?orgId=$ORG  → linha do tempo (200)

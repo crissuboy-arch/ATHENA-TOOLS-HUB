@@ -150,6 +150,23 @@ Vazio honesto enquanto nada foi produzido.
 fica registrado em `audit_logs` (`approval.granted` / `approval.rejected`).
 Decidir job fora de `PENDING_APPROVAL` → `409 INVALID_TRANSITION`.
 
+> **Quem decide (FASE 2B, C4):** a decisão é EXCLUSIVAMENTE humana,
+> garantido em código — chaves de API são recusadas com 403 neste
+> endpoint MESMO com o scope `approvals:decide` (`requireHumanSession`
+> em `lib/api-auth.ts`). O scope continua válido para LER a fila
+> (`GET /api/v1/approvals`).
+
+> **Estado real de `approval_requests` e da expiração (FASE 2B, C9):**
+> a tabela `approval_requests` existe no schema (migration 0001, com
+> coluna `expires_at`), mas **nenhum código a lê ou escreve** — está
+> reservada, não implementada. As aprovações vivem no ESTADO DO JOB
+> (`execution_jobs`: `PENDING_APPROVAL → QUEUED/CANCELLED`), decididas
+> por `decideApproval` (`lib/jobs/service.ts`). Consequência honesta:
+> **a expiração NÃO é aplicada** — um job em `PENDING_APPROVAL` não
+> expira sozinho ao fim de nenhum prazo; fica pendente até um humano
+> decidir ou o job ser cancelado. Não assumir TTL de aprovações em
+> lado nenhum (nem Athena, nem UI).
+
 ## Auditoria
 
 Toda transição de estado gera linha em `execution_events`; toda ação

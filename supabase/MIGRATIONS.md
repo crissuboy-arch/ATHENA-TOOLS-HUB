@@ -72,7 +72,7 @@ migrations re-runnable (`IF NOT EXISTS` / `OR REPLACE` / `ON CONFLICT`).
 | job_attempts           | `job_attempts`                  | **nova (0009)** |
 | job_events             | `execution_events`              | já existia (0001) — reutilizada (timeline append-only por job) |
 | job_artifacts          | `generated_assets`              | já existia (0001) — reutilizada |
-| approvals              | `approval_requests`             | já existia (0001) — reutilizada |
+| approvals              | `approval_requests`             | existe no schema (0001) mas **NÃO é usada por código nenhum** (FASE 2B, C9): as aprovações operativas vivem no estado do job em `execution_jobs` (`PENDING_APPROVAL → QUEUED/CANCELLED`) + `audit_logs`; a coluna `expires_at` nunca é aplicada (sem TTL). Tabela reservada, não "reutilizada" |
 | execution_logs         | `execution_events` (`type='log'`) | já existia (0001) — reutilizada (a tabela já prevê entradas `type='log'` com `message`+`payload`) |
 | integration_endpoints  | `integration_endpoints`         | **nova (0009)** |
 | webhooks               | `webhooks`                      | **nova (0009)** |
