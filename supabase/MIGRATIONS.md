@@ -29,6 +29,7 @@ numerados sequencialmente (`NNNN_name.sql`).
 | 0008 | `0008_agents_missions.sql`  | **NOVO (Fase 2):** `agents`, `agent_tool_permissions` (escopos + teto de gasto), `missions` (idempotência por `(org_id, mission_key)`), `mission_steps` (passos ordenados → `execution_jobs`). Inclui `guard_mission_state()`: máquina de estados em-DB sem bypass. | ⏳ **NÃO aplicada** — ficheiro apenas |
 | 0009 | `0009_execution_webhooks.sql` | **NOVO (Fase 2):** `job_attempts` (tentativas por job, append-only), `integration_endpoints` (endpoints concretos por integração), `webhooks` (inbound via `path_token` único; segredo NUNCA aqui, só `secret_ref` do vault), `webhook_deliveries` (log de entregas, append-only). | ⏳ **NÃO aplicada** — ficheiro apenas |
 | 0010 | `0010_rls_phase2.sql`       | **NOVO (Fase 2):** RLS em todas as tabelas 0006–0009 (catálogos globais read-only; `profiles` self/org-shared; operacionais no modelo 0002; `agent_tool_permissions` escrita só owner/admin; `job_attempts`/`webhook_deliveries` append-only) + triggers `enforce_same_org()` em todos os pares FK novos. | ⏳ **NÃO aplicada** — ficheiro apenas |
+| 0011 | `0011_api_keys.sql`         | **NOVO (Fase 2D, C5+C3b):** `api_keys` (hash UNIQUE c/ lookup O(1), expiração/revogação/rotação; fecha B5/B6) + `api_request_nonces` (anti-replay persistente insert-first; fecha metade de B2). RLS ativa com **zero policies** de propósito (fail-closed; acesso só service_role). Backfill dos hashes legados de `integrations.config`. Spec: `docs/FASE2C_C3_C5_SPEC.md`; plano/rollback: `docs/FASE2D_MIGRATION_ROLLBACK_PLAN.md`. | ⏳ **PREPARADA na Fase 2D — NÃO aplicada** (aplicar = gate G2, decisão expressa da Cristiane) |
 
 ## Ordem de aplicação (quando a Cristiane decidir aplicar)
 
@@ -37,6 +38,7 @@ No SQL editor do projeto Supabase, **por ordem numérica estrita**:
 ```
 0001 → 0002 → 0003 (só a função; a execução é separada)
 → 0004 → 0005 → 0006 → 0007 → 0008 → 0009 → 0010
+→ 0011 (só com autorização expressa — gate G2 da Fase 2D)
 ```
 
 Depois das migrations, os passos manuais já documentados continuam válidos:

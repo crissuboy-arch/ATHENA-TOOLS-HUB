@@ -4,15 +4,17 @@
  * `lib/db-types.ts` é escrito à mão e historicamente só espelhava a
  * migration 0001 (14/25 tabelas sem tipo, 5 enums e 2 colunas em falta —
  * drift medido na Fase 1). Este teste é o anti-drift: deriva tabelas,
- * colunas, enums e funções DIRETAMENTE do SQL das migrations 0001–0010 e
+ * colunas, enums e funções DIRETAMENTE do SQL das migrations 0001–0011 e
  * compara-os, nos dois sentidos, com o que `lib/db-types.ts` declara.
  *
  * Se uma migration futura mudar o schema sem atualizar os tipos (ou os
  * tipos forem editados sem migration), este teste falha com a lista
  * exata das divergências. Não é um instantâneo decorativo: nada aqui está
- * hardcoded exceto as contagens-âncora do âmbito 0001–0010 (25 tabelas,
+ * hardcoded exceto as contagens-âncora do âmbito 0001–0011 (27 tabelas,
  * 11 enums, 8 funções únicas — bootstrap_organization tem 2 definições
- * CREATE, em 0002 e 0005, e conta uma vez).
+ * CREATE, em 0002 e 0005, e conta uma vez). A 0011 (api_keys +
+ * api_request_nonces, FASE 2D) está PREPARADA e não aplicada — o teste
+ * deriva do ficheiro, não da BD viva, por isso cobre-a já.
  *
  * Nenhum teste toca rede, BD ou credenciais — só lê ficheiros do repo.
  */
@@ -282,12 +284,12 @@ const enumTsToSql = new Map(
 // Testes
 // ---------------------------------------------------------------------------
 
-describe("C6 — tipos TS espelham as migrations 0001–0010", () => {
-  it("as 25 tabelas das migrations existem no mapa Tables (e vice-versa)", () => {
+describe("C6/2D — tipos TS espelham as migrations 0001–0011", () => {
+  it("as 27 tabelas das migrations existem no mapa Tables (e vice-versa)", () => {
     expect([...sqlTables.keys()].sort()).toEqual(
       [...tsTablesMap.keys()].sort(),
     );
-    expect(sqlTables.size).toBe(25);
+    expect(sqlTables.size).toBe(27);
   });
 
   it("cada tabela tem exatamente as colunas da migration, com tipo e nulidade certos", () => {
@@ -377,5 +379,24 @@ describe("C6 — tipos TS espelham as migrations 0001–0010", () => {
     expect(job.get("tool_slug")).toBe("string | null");
     const tool = tsInterfaces.get(tsTablesMap.get("tools")!)!;
     expect(tool.get("category_id")).toBe("string | null");
+  });
+
+  it("as tabelas da 0011 (api_keys, api_request_nonces) estão tipadas", () => {
+    // FASE 2D (C5/C3b): a migration está preparada, não aplicada — os
+    // tipos descrevem o schema-alvo e este teste impede que a 0011 e
+    // lib/db-types.ts voltem a divergir.
+    const apiKey = tsInterfaces.get(tsTablesMap.get("api_keys")!)!;
+    expect(apiKey.get("key_hash")).toBe("string");
+    expect(apiKey.get("scopes")).toBe("string[]");
+    expect(apiKey.get("integration_id")).toBe("string | null");
+    expect(apiKey.get("signing_secret_ref")).toBe("string | null");
+    expect(apiKey.get("expires_at")).toBe("string | null");
+    expect(apiKey.get("revoked_at")).toBe("string | null");
+    expect(apiKey.get("replaced_by_id")).toBe("string | null");
+    const nonce = tsInterfaces.get(tsTablesMap.get("api_request_nonces")!)!;
+    expect(nonce.get("api_key_id")).toBe("string");
+    expect(nonce.get("nonce")).toBe("string");
+    expect(nonce.get("request_ts")).toBe("string");
+    expect(nonce.get("expires_at")).toBe("string");
   });
 });

@@ -486,6 +486,44 @@ export interface WebhookDelivery {
 }
 
 // ---------------------------------------------------------------------------
+// Row types — 0011 api keys & request nonces (FASE 2D, C5 + C3b)
+// NOTE: migration 0011 is PREPARED, not applied (gate G2 is the owner's
+// separate decision). These types describe the target schema so the code
+// written against it typechecks today; the runtime degrades honestly to
+// the legacy auth path while the tables do not exist.
+// ---------------------------------------------------------------------------
+
+export interface ApiKey {
+  /** Public key id — safe to expose; it is also the X-Key-Id header value. */
+  id: string;
+  org_id: string;
+  integration_id: string | null;
+  label: string;
+  /** SHA-256 hex of the raw key — NEVER the raw key itself. */
+  key_hash: string;
+  scopes: string[];
+  /** Vault reference for the dedicated HMAC signing secret (spec Opção A) — NEVER the secret. */
+  signing_secret_ref: string | null;
+  created_by: string | null;
+  created_at: string;
+  /** NULL would mean "no expiry" — issuance always sets it (default +90 days). */
+  expires_at: string | null;
+  last_used_at: string | null;
+  /** NULL = active; set = revoked (immediate and irreversible). */
+  revoked_at: string | null;
+  /** Rotation lineage: the key that replaced this one, once rotated. */
+  replaced_by_id: string | null;
+}
+
+export interface ApiRequestNonce {
+  api_key_id: string;
+  nonce: string;
+  request_ts: string;
+  expires_at: string;
+  created_at: string;
+}
+
+// ---------------------------------------------------------------------------
 // Insert / Update helpers
 // ---------------------------------------------------------------------------
 
@@ -515,6 +553,8 @@ export type Tables = {
   integration_endpoints: IntegrationEndpoint;
   webhooks: Webhook;
   webhook_deliveries: WebhookDelivery;
+  api_keys: ApiKey;
+  api_request_nonces: ApiRequestNonce;
 };
 
 export type TableName = keyof Tables;
