@@ -55,6 +55,31 @@ export async function authenticate(request: NextRequest): Promise<ApiAuthContext
   return { kind: "user", userId: session.user.id };
 }
 
+/**
+ * FASE 2B (C4) — decisões de aprovação são EXCLUSIVAMENTE humanas.
+ *
+ * Antes, a regra "máquinas não decidem aprovações" era apenas documental
+ * (docs/ATHENA_MANUAL.md §3 recomendava não conceder o scope): uma chave
+ * m2m COM `approvals:decide` conseguia aprovar/rejeitar jobs — inclusive
+ * os que ela própria criou (bloqueio B4 da Fase 1). Agora é código: este
+ * guarda corre na rota de decisão ANTES de qualquer outra verificação e
+ * recusa qualquer contexto que não seja sessão de usuário. O papel
+ * (owner/admin) continua a ser exigido a seguir, via
+ * `resolveOrgScope(auth, orgId, ["owner", "admin"])`.
+ *
+ * O scope `approvals:decide` continua válido para LEITURA da fila
+ * (GET /api/v1/approvals) — máquinas podem consultar; decidir, não.
+ */
+export function requireHumanSession(
+  ctx: ApiAuthContext,
+): asserts ctx is Extract<ApiAuthContext, { kind: "user" }> {
+  if (ctx.kind !== "user") {
+    throw HubError.forbidden(
+      "Decisões de aprovação exigem sessão humana (owner/admin). Chaves de API não podem aprovar nem rejeitar jobs, mesmo com o scope approvals:decide.",
+    );
+  }
+}
+
 /** Exige um scope. Para sessão de usuário, o RBAC é verificado por org (resolveOrgScope). */
 export function requireScope(ctx: ApiAuthContext, scope: ApiScope): void {
   if (ctx.kind === "m2m" && !ctx.scopes.includes(scope)) {
