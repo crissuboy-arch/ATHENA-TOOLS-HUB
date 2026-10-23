@@ -56,6 +56,13 @@ aplicada** (gate G2). Sem ela, estes endpoints devolvem `501` honesto e
 vale o processo legado abaixo. Plano completo:
 `docs/FASE2D_MIGRATION_ROLLBACK_PLAN.md`.
 
+**Pré-condição — o registo da integração:** a emissão é por integração
+(o `{integrationId}` da rota) e a org resolve-se a partir dessa linha.
+A BD do Hub tem hoje **zero** linhas em `integrations` (auditoria de
+2026-10-23): o registo inicial da Athena é um passo manual documentado
+no plano (gate **G2.5**, entre aplicar a 0011 e o smoke de validação),
+executado pela Cristiane no SQL editor — **ainda não foi criado**.
+
 **Processo legado (transição — mundo pré-0011 e fallback):**
 
 1. Gerar o par com `generateApiKey()` de `lib/api-keys.ts`:
@@ -78,9 +85,20 @@ em dois caminhos (FASE 2D):
    chave). A identidade inclui `apiKeyId` e `signingSecretRef`.
 2. **Legado** (fallback, `HUB_API_KEYS_LEGACY_FALLBACK`): o hash é
    comparado em tempo constante contra as integrações com
-   `state='connected'` — as únicas que a query lê.
+   `state='connected'` — as únicas que a query lê. Só se chega aqui
+   sem linha na tabela nova ou com a tabela **comprovadamente
+   inexistente** (pré-0011).
 
-Qualquer falha devolve `null` → 401 indistinguível.
+Chave inválida, revogada, expirada ou ausente devolve `null` → 401
+indistinguível. **Falha de infraestrutura não é 401** (REVISÃO PRÉ-G2):
+se a leitura da tabela `api_keys` falhar por conexão, permissão,
+timeout, erro genérico ou exceção do cliente — qualquer erro que não
+prove a tabela inexistente — a verificação lança `500` (fail-closed)
+e o caminho legado **não** é tentado. Um erro de BD nunca rebaixa a
+autenticação em silêncio. A mesma classificação governa o registo do
+nonce: só a tabela de nonces comprovadamente inexistente degrada para
+memória (declarado); o resto é 500. Tabela de decisão completa:
+`docs/FASE2D_MIGRATION_ROLLBACK_PLAN.md` §2.1.
 
 ### Anti-replay (obrigatório para API keys)
 
