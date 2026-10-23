@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 
@@ -20,7 +20,6 @@ export const metadata: Metadata = {
   description:
     "Plataforma de ferramentas de IA: catálogo, execuções, aprovações, resultados e integrações — com governança pronta para Athena Control.",
   applicationName: "Athena Tools Hub",
-  themeColor: "#0A1A33",
   manifest: "/manifest.webmanifest",
   icons: {
     icon: "/icons/icon.svg",
@@ -30,6 +29,15 @@ export const metadata: Metadata = {
     statusBarStyle: "black-translucent",
     title: "Athena Tools Hub",
   },
+};
+
+/**
+ * FASE 2B (C10): `themeColor` saiu de `metadata` (deprecated desde o
+ * Next 14; o build avisava) para o export `viewport` — mesma cor
+ * (#0A1A33), comportamento visual idêntico.
+ */
+export const viewport: Viewport = {
+  themeColor: "#0A1A33",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
