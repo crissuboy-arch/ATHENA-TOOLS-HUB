@@ -26,15 +26,16 @@ no MVP** — a integração vive no banco, não no ambiente:
 | `integrations.config.scopes` | Ex.: `["tools:read","jobs:read","jobs:write"]` (ver §3 — aprovações) |
 | Fora do banco | A chave crua `hub_live_<64 hex>`, entregue **uma única vez** ao operador da Athena (arquivo/vault — nunca chat, nunca git) |
 
-> ⚠️ **BLOQUEADOR (2026-10-18):** `lib/api-keys.ts` (`verifyApiKey`) filtra por
-> uma coluna `status` que **não existe** na tabela `integrations` (o schema real
-> tem `state`, enum `tool_state` — ver migration 0001). Resultado: qualquer
-> chave de API válida devolve 401 contra o banco real. Nenhum teste cobre
-> `verifyApiKey`, por isso os 122/122 passam na mesma. **Não validar o ciclo do
-> §4 com API key até este drift ser corrigido no código** (fora do escopo desta
-> fase — registado também em `docs/DEPLOY_PREP.md` §1). O passo 2 abaixo usa as
-> colunas reais para deixar o registo pronto; a autenticação só funciona após a
-> correção.
+> ✅ **CORRIGIDO na FASE 1 (commit `76e3969`, 2026-10-18):** `lib/api-keys.ts`
+> (`verifyApiKey`) filtrava por uma coluna `status` que **não existe** na
+> tabela `integrations`. Hoje filtra `.eq("state", "connected")` contra a
+> coluna real `state` (enum `tool_state` — ver migration 0001): **só
+> integrações em `state='connected'` autenticam**; qualquer outro estado
+> devolve 401 indistinguível. A correção é coberta por testes anti-drift e de
+> round-trip (`lib/api-keys.test.ts`); gates da FASE 1: 129/129; suite
+> completa medida na auditoria de 2026-10-23: 452/452. O passo 2 abaixo usa
+> as colunas reais — o registo tem de ficar em `state='connected'` para a
+> chave funcionar (ver §2).
 
 **Checklist de rede/relógio (causa nº 1 de 401s):**
 - O cliente Athena **tem** de enviar `X-Request-Timestamp` (unix seconds) e
@@ -60,23 +61,26 @@ no MVP** — a integração vive no banco, não no ambiente:
    colunas reais da migration 0001):
    ```sql
    insert into public.integrations (org_id, name, provider, type, state, config)
-   values ('<ORG_ID>', 'athena-control', 'athena', 'api', 'in-development',
+   values ('<ORG_ID>', 'athena-control', 'athena', 'api', 'connected',
      jsonb_build_object(
        'apiKeyHash', '<KEY_HASH_DO_PASSO_1>',
        'scopes', '["tools:read","jobs:read","jobs:write"]'::jsonb
      ));
    ```
-   (`state='in-development'` é o estado honesto: a integração ainda não foi
-   testada de ponta a ponta — ver bloqueador no §1. `provider` é NOT NULL.)
+   (`state='connected'` é **obrigatório** para a chave autenticar —
+   `verifyApiKey` só aceita esse estado. Se registares a integração antes de
+   a ativar, usa um estado honesto (p. ex. `in-development`) e **promove para
+   `connected` no momento da ativação**/entrega da chave — até lá, a chave
+   devolve 401. `provider` é NOT NULL.)
 3. **Entregar a chave crua** (`hub_live_...`) ao operador da Athena por canal
    seguro (arquivo para download / vault). **Nunca** no chat, nunca no git,
    nunca em logs. Ela não fica guardada em lado nenhum do Hub.
 4. **Confirmar**: `select id, name, type, state from public.integrations;`
    → a linha existe com `type='api'`.
 5. **Revogar** (quando preciso): `update public.integrations set
-   state='unavailable' where id='<ID>';` — notar que, com o drift do §1,
-   `verifyApiKey` nem chega a ler `state`; após a correção do código, este
-   é o interruptor de revogação.
+   state='unavailable' where id='<ID>';` — como `verifyApiKey` só aceita
+   `state='connected'`, qualquer outro estado revoga a chave com efeito
+   imediato (401 no pedido seguinte). Este é o interruptor de revogação.
 
 ---
 
@@ -99,14 +103,13 @@ dela, e mesmo assim com âmbito limitado.
 
 ## 4. Validar o ciclo missão → job → resultado (ambiente de teste)
 
-> ⛔ **BLOQUEADO até à correção do drift `status` × `state` (§1).** Os comandos
-> abaixo estão prontos para correr **após** a correção no código; sem ela, o
-> passo 1 devolve sempre 401.
+> ✅ **Desbloqueado:** o drift `status` × `state` foi corrigido na FASE 1
+> (`76e3969`) — com a integração registada em `state='connected'` (§2), o
+> passo 1 autentica de verdade.
 >
-> Quando desbloqueado: fazer primeiro contra **localhost** ou um **preview
-> deployment**; se usar o projeto Supabase de produção, usar uma org de teste.
-> Não existe projeto de staging dedicado — **a confirmar** com ela
-> (ver `docs/DEPLOY_PREP.md` §6).
+> Fazer primeiro contra **localhost** ou um **preview deployment**; se usar o
+> projeto Supabase de produção, usar uma org de teste. Não existe projeto de
+> staging dedicado — **a confirmar** com ela (ver `docs/DEPLOY_PREP.md` §6).
 
 ```bash
 BASE=http://localhost:3000            # ou o URL do preview

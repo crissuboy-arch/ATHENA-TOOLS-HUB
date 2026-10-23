@@ -13,7 +13,9 @@
 > - `docs/RECOVERY.md` — recuperação e rollback.
 
 Branch de trabalho: `feat/mvp-foundation` (a `main` fica intocada para sempre).
-Gates medidos em 2026-10-18: **122/122 testes PASS · tsc 0 · eslint 0 · build PASS.**
+Gates medidos em 2026-10-18: 129/129 (gates da FASE 1) PASS · tsc 0 · eslint 0 ·
+build PASS. Suite completa medida na auditoria de 2026-10-23: **452/452 testes
+PASS · tsc 0 · eslint 0 · build PASS.**
 
 ---
 
@@ -21,7 +23,7 @@ Gates medidos em 2026-10-18: **122/122 testes PASS · tsc 0 · eslint 0 · build
 
 | # | Check | Estado 2026-10-18 |
 |---|-------|-------------------|
-| 1 | Gates locais: `npm test`, `npm run typecheck`, `npm run lint`, `npm run build` | PASS (122/122, 0, 0, PASS) |
+| 1 | Gates locais: `npm test`, `npm run typecheck`, `npm run lint`, `npm run build` | PASS (suite completa 452/452 medida em 2026-10-23; gates FASE 1: 129/129) |
 | 2 | Migrations 0001–0005 aplicadas no projeto dedicado `https://bvsvqueeihljwksemfmz.supabase.co` | Aplicadas por ela em 2026-10-17 (confirmado por ela) |
 | 3 | Utilizador admin + organização + seed do catálogo | PENDENTE DELA — ver `docs/GO_LIVE_CHECKLIST.md` §1–2 |
 | 4 | Chaves Supabase no `.env.local` e app local sem aviso "não conectado" | PENDENTE DELA — ver `docs/GO_LIVE_CHECKLIST.md` §3 |
@@ -29,15 +31,14 @@ Gates medidos em 2026-10-18: **122/122 testes PASS · tsc 0 · eslint 0 · build
 | 6 | Plano de testes funcionais (`GO_LIVE_CHECKLIST.md` §4) | NÃO VERIFICADO |
 
 **Blockers conhecidos** (não quebram o build, mas contam para o go/no-go):
-- **Drift `status` × `state` em `integrations` (BLOQUEADOR da integração Athena):**
-  `lib/api-keys.ts` (`verifyApiKey`) filtra `.eq("status", "active")`, mas a
-  tabela `public.integrations` (migration 0001) **não tem coluna `status`** —
-  tem `state` (enum `tool_state`). Contra o schema real, a query falha e
-  `verifyApiKey` devolve `null` → **toda a autenticação machine-to-machine
-  responde 401**, mesmo com chave válida. Nenhum teste cobre `verifyApiKey`
-  (é por isso que os 122/122 passam na mesma). Correção é código (fora do
-  escopo desta fase); até lá, o ciclo Athena com API key está **bloqueado**.
-  Ver `docs/ATHENA_MANUAL.md` §2.
+- **Drift `status` × `state` em `integrations` — CORRIGIDO na FASE 1
+  (`76e3969`, 2026-10-18):** `lib/api-keys.ts` (`verifyApiKey`) filtrava
+  `.eq("status", "active")` contra uma coluna inexistente; hoje filtra
+  `.eq("state", "connected")` contra a coluna real `state` (enum
+  `tool_state`, migration 0001) — só integrações em `state='connected'`
+  autenticam. Coberto por testes anti-drift e de round-trip
+  (`lib/api-keys.test.ts`). **Já não é bloqueador** da integração Athena.
+  Ver `docs/ATHENA_MANUAL.md` §1–§2.
 - Drift de tipos: `tool_slug` em falta no tipo `ExecutionJob` em `lib/db-types.ts`
   (a coluna existe na migration 0004; o tipo TS ainda não a declara).
 

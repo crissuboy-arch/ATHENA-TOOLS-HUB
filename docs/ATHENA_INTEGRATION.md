@@ -42,7 +42,8 @@ quando o Supabase está configurado; sem Supabase, libera tudo com o header
 1. Gerar o par com `generateApiKey()` de `lib/api-keys.ts`:
    `hub_live_<64 hex>` (crua) + SHA-256 (hash).
 2. Gravar **apenas o hash** em `integrations.config.apiKeyHash` e os scopes em
-   `integrations.config.scopes`, com `status='active'` e o `org_id` da org.
+   `integrations.config.scopes`, com `state='connected'` (coluna real da
+   migration 0001 — `verifyApiKey` só aceita esse estado) e o `org_id` da org.
 3. Entregar a chave crua **uma única vez** ao dono da integração, fora do git,
    fora do chat (arquivo para download / vault).
 
@@ -51,7 +52,9 @@ A chave crua nunca persiste em banco, logs ou código.
 ### Verificação (lado Hub)
 
 `verifyApiKey(rawKey)` → `{ orgId, scopes, integrationId } | null`.
-O hash é comparado em tempo constante contra integrações ativas.
+O hash é comparado em tempo constante contra as integrações com
+`state='connected'` — as únicas que a query lê; qualquer outro estado
+(ou chave desconhecida) devolve `null` → 401 indistinguível.
 Upgrade documentado: tabela dedicada `api_keys(key_hash PK, …)` com índice.
 
 ### Anti-replay (obrigatório para API keys)
@@ -159,7 +162,8 @@ Pontos de ligação que a ATHENA Control precisa implementar do lado cliente:
 
 1. **Emissão e rotação de chaves** — o Hub só verifica; a Control precisa de
    UX/fluxo para gerar (`generateApiKey`), entregar uma única vez e revogar
-   (`integrations.status='disabled'`) chaves por integração.
+   (passar `integrations.state` para um estado ≠ `'connected'`, p. ex.
+   `'unavailable'`) chaves por integração.
 2. **Assinatura anti-replay** — o cliente Athena deve enviar
    `X-Request-Timestamp` + `X-Nonce` únicos por requisição (janela ±5 min);
    relógios dessincronizados causam `401`.
@@ -177,7 +181,7 @@ Pontos de ligação que a ATHENA Control precisa implementar do lado cliente:
 7. **Multi-instância** — rate limit e nonces anti-replay são em memória;
    antes de escalar horizontalmente, migrar ambos para Redis
    (interfaces isoladas em `lib/rate-limit.ts` e `lib/api-keys.ts`).
-8. **RBAC** — papéis `owner/admin/member/viewer` em `memberships`; decisões
-   de aprovação exigem `owner`/`admin` para usuários humanos.
+8. **RBAC** — papéis `owner/admin/member/viewer` em `organization_members`;
+   decisões de aprovação exigem `owner`/`admin` para usuários humanos.
 9. **Verificação de org** — a chave é vinculada a uma org; a Control deve
    guardar `orgId` por integração e nunca cruzá-los.
