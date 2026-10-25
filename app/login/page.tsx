@@ -2,7 +2,8 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense } from "react";
 import { Card } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
@@ -10,13 +11,41 @@ import { Alert } from "@/components/ui/Alert";
 import { Logo } from "@/components/layout/Logo";
 import { t } from "@/lib/i18n";
 import { getBrowserSupabase, isSupabaseConfigured } from "@/lib/supabase-browser";
+import { buildPasswordResetRedirect } from "@/lib/auth-redirects";
 
-export default function LoginPage() {
+function EyeIcon({ off = false }: { off?: boolean }) {
+  return (
+    <svg
+      width="20"
+      height="20"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6-10-6-10-6z" />
+      <circle cx="12" cy="12" r="3" />
+      {off && <line x1="4" y1="4" x2="20" y2="20" />}
+    </svg>
+  );
+}
+
+function LoginForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [email, setEmail] = React.useState("");
   const [password, setPassword] = React.useState("");
+  const [showPassword, setShowPassword] = React.useState(false);
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
+  const [mode, setMode] = React.useState<"login" | "forgot">("login");
+  const [forgotLoading, setForgotLoading] = React.useState(false);
+  const [forgotSent, setForgotSent] = React.useState(false);
+  const [forgotError, setForgotError] = React.useState<string | null>(null);
+  const resetDone = searchParams.get("reset") === "success";
 
   // Honest state: without Supabase there is no auth backend — explain,
   // don't render a login form that can never work.
@@ -28,7 +57,7 @@ export default function LoginPage() {
             <Logo size={40} />
             <div>
               <h1 className="text-lg font-bold text-ink-900">
-                {t.common.appName}
+                {t.auth.loginTitle}
               </h1>
             </div>
           </div>
@@ -71,6 +100,29 @@ export default function LoginPage() {
     }
   };
 
+  const submitForgot = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setForgotError(null);
+    setForgotLoading(true);
+    try {
+      const supabase = getBrowserSupabase();
+      if (!supabase) throw new Error("not-configured");
+      const { error: resetError } =
+        await supabase.auth.resetPasswordForEmail(email.trim(), {
+          redirectTo: buildPasswordResetRedirect(window.location.origin),
+        });
+      if (resetError) {
+        setForgotError(t.auth.unexpectedError);
+        return;
+      }
+      setForgotSent(true);
+    } catch {
+      setForgotError(t.auth.unexpectedError);
+    } finally {
+      setForgotLoading(false);
+    }
+  };
+
   return (
     <div className="flex min-h-screen items-center justify-center bg-navy-950 px-4">
       <Card className="w-full max-w-md">
@@ -78,41 +130,138 @@ export default function LoginPage() {
           <Logo size={40} />
           <div>
             <h1 className="text-lg font-bold text-ink-900">
-              {t.auth.loginTitle}
+              {mode === "forgot"
+                ? t.auth.forgotPasswordTitle
+                : t.auth.loginTitle}
             </h1>
-            <p className="text-sm text-ink-500">{t.auth.loginSubtitle}</p>
+            <p className="text-sm text-ink-500">
+              {mode === "forgot"
+                ? t.auth.forgotPasswordBody
+                : t.auth.loginSubtitle}
+            </p>
           </div>
         </div>
 
-        {error && (
+        {resetDone && mode === "login" && (
+          <Alert variant="success" className="mb-5">
+            {t.auth.resetSuccess}
+          </Alert>
+        )}
+
+        {error && mode === "login" && (
           <Alert variant="danger" className="mb-5">
             {error}
           </Alert>
         )}
 
-        <form onSubmit={submit} className="space-y-4">
-          <Input
-            label={t.auth.email}
-            type="email"
-            autoComplete="email"
-            required
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder={t.auth.emailPlaceholder}
-          />
-          <Input
-            label={t.auth.password}
-            type="password"
-            autoComplete="current-password"
-            required
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-          />
-          <Button type="submit" variant="primary" className="w-full" loading={loading}>
-            {t.auth.submit}
-          </Button>
-        </form>
+        {mode === "login" ? (
+          <>
+            <form onSubmit={submit} className="space-y-4">
+              <Input
+                label={t.auth.email}
+                type="email"
+                autoComplete="email"
+                required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder={t.auth.emailPlaceholder}
+              />
+              <Input
+                label={t.auth.password}
+                type={showPassword ? "text" : "password"}
+                autoComplete="current-password"
+                required
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                trailing={
+                  <button
+                    type="button"
+                    aria-label={
+                      showPassword ? t.auth.hidePassword : t.auth.showPassword
+                    }
+                    aria-pressed={showPassword}
+                    onClick={() => setShowPassword((v) => !v)}
+                    className="text-ink-500 hover:text-ink-900 focus:outline-none"
+                  >
+                    <EyeIcon off={showPassword} />
+                  </button>
+                }
+              />
+              <Button type="submit" variant="primary" className="w-full" loading={loading}>
+                {t.auth.submit}
+              </Button>
+            </form>
+            <div className="mt-4 text-center">
+              <button
+                type="button"
+                onClick={() => {
+                  setMode("forgot");
+                  setError(null);
+                }}
+                className="text-sm font-medium text-gold-600 hover:underline focus:outline-none"
+              >
+                {t.auth.forgotPassword}
+              </button>
+            </div>
+          </>
+        ) : forgotSent ? (
+          <>
+            <Alert variant="success" className="mb-5">
+              {t.auth.recoveryLinkSent}
+            </Alert>
+            <Button
+              variant="primary"
+              className="w-full"
+              onClick={() => {
+                setMode("login");
+                setForgotSent(false);
+              }}
+            >
+              {t.auth.backToLogin}
+            </Button>
+          </>
+        ) : (
+          <form onSubmit={submitForgot} className="space-y-4">
+            {forgotError && (
+              <Alert variant="danger" className="mb-5">
+                {forgotError}
+              </Alert>
+            )}
+            <Input
+              label={t.auth.email}
+              type="email"
+              autoComplete="email"
+              required
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder={t.auth.emailPlaceholder}
+            />
+            <Button type="submit" variant="primary" className="w-full" loading={forgotLoading}>
+              {t.auth.sendRecoveryLink}
+            </Button>
+            <div className="text-center">
+              <button
+                type="button"
+                onClick={() => {
+                  setMode("login");
+                  setForgotError(null);
+                }}
+                className="text-sm font-medium text-gold-600 hover:underline focus:outline-none"
+              >
+                {t.auth.backToLogin}
+              </button>
+            </div>
+          </form>
+        )}
       </Card>
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense>
+      <LoginForm />
+    </Suspense>
   );
 }
