@@ -16,6 +16,11 @@ import {
   buildPasswordResetRedirect,
   isRecoveryHash,
 } from "@/lib/auth-redirects";
+import {
+  classifyAuthError,
+  classifyHashError,
+  parseHashError,
+} from "@/lib/auth-errors";
 
 function LoginForm() {
   const router = useRouter();
@@ -31,7 +36,28 @@ function LoginForm() {
   const [forgotLoading, setForgotLoading] = React.useState(false);
   const [forgotSent, setForgotSent] = React.useState(false);
   const [forgotError, setForgotError] = React.useState<string | null>(null);
+  const [forgotRateLimited, setForgotRateLimited] = React.useState(false);
   const resetDone = searchParams.get("reset") === "success";
+
+  // Verificação falhada que aterrou na tela de login: quando o
+  // Supabase rejeita o token do link (expirado, já utilizado) e o
+  // Site URL aponta para o login, o fragmento traz o erro — e a
+  // tela tem de o explicar, em vez de mostrar o login como se nada
+  // tivesse acontecido. Assíncrono de propósito (lint).
+  React.useEffect(() => {
+    const hashError = parseHashError(window.location.hash);
+    if (!hashError) return;
+    const kind = classifyHashError(hashError);
+    const timer = setTimeout(() => {
+      setError(
+        kind === "token-expired"
+          ? t.auth.resetLinkExpiredBody
+          : t.auth.resetLinkInvalidBody,
+      );
+    }, 0);
+    return () => clearTimeout(timer);
+    // Corre uma única vez ao montar: o fragmento só existe no link.
+  }, []);
 
   // Recuperação que chegou à tela de login em vez do callback: quando
   // o Supabase ignora o redirectTo (URL fora da allowlist) e volta
@@ -103,7 +129,14 @@ function LoginForm() {
         password,
       });
       if (signInError) {
-        setError(t.auth.invalidCredentials);
+        const kind = classifyAuthError(signInError);
+        setError(
+          kind === "email-not-confirmed"
+            ? t.auth.emailNotConfirmed
+            : kind === "email-rate-limited"
+              ? t.auth.emailRateLimited
+              : t.auth.invalidCredentials,
+        );
         return;
       }
       router.push("/");
@@ -127,7 +160,15 @@ function LoginForm() {
           redirectTo: buildPasswordResetRedirect(window.location.origin),
         });
       if (resetError) {
-        setForgotError(t.auth.unexpectedError);
+        // Limite atingido: dizê-lo e bloquear novos pedidos nesta
+        // sessão da página — pedir mais links não ajuda e só atrasa
+        // o desbloqueio. Nunca há repetição automática.
+        if (classifyAuthError(resetError) === "email-rate-limited") {
+          setForgotRateLimited(true);
+          setForgotError(t.auth.emailRateLimited);
+        } else {
+          setForgotError(t.auth.unexpectedError);
+        }
         return;
       }
       setForgotSent(true);
@@ -218,6 +259,23 @@ function LoginForm() {
                 {t.auth.forgotPassword}
               </button>
             </div>
+          </>
+        ) : forgotRateLimited ? (
+          <>
+            <Alert variant="danger" className="mb-5">
+              {forgotError ?? t.auth.emailRateLimited}
+            </Alert>
+            <Button
+              variant="primary"
+              className="w-full"
+              onClick={() => {
+                setMode("login");
+                setForgotRateLimited(false);
+                setForgotError(null);
+              }}
+            >
+              {t.auth.backToLogin}
+            </Button>
           </>
         ) : forgotSent ? (
           <>

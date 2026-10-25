@@ -68,6 +68,13 @@ export const t = {
     passwordTooShort: "A senha tem de ter pelo menos 8 caracteres.",
     resetSuccess: "Senha redefinida com sucesso. Entra com a nova senha.",
     saveNewPassword: "Guardar nova senha",
+    emailNotConfirmed:
+      "A tua conta ainda não foi confirmada. Verifica o teu e-mail (e o spam) para o link de confirmação — ou usa “Esqueceu a senha?” para receber um novo link.",
+    emailRateLimited:
+      "O limite de envio de e-mails foi atingido. Aguarda algum tempo antes de pedir um novo link — pedir mais links agora não ajuda.",
+    resetLinkExpiredTitle: "Link expirado ou já utilizado",
+    resetLinkExpiredBody:
+      "Este link expirou ou já foi utilizado. Cada link de recuperação só vale uma vez — pede um novo link na tela de login, em “Esqueceu a senha?”, e usa sempre o link mais recente.",
     resetLinkInvalidTitle: "Link inválido ou expirado",
     resetLinkInvalidBody:
       "Este link de recuperação já não é válido. Pede um novo link na tela de login, em “Esqueceu a senha?”.",

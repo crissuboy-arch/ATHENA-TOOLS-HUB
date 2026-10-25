@@ -11,6 +11,10 @@ import { Logo } from "@/components/layout/Logo";
 import { t } from "@/lib/i18n";
 import { getBrowserSupabase } from "@/lib/supabase-browser";
 import { resolveCallbackNext } from "@/lib/auth-redirects";
+import {
+  classifyHashError,
+  parseHashError,
+} from "@/lib/auth-errors";
 
 /**
  * Callback dos links de e-mail do Supabase Auth (recuperação de senha).
@@ -27,14 +31,28 @@ import { resolveCallbackNext } from "@/lib/auth-redirects";
 function CallbackHandler() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [error, setError] = React.useState(false);
+  const [errorKind, setErrorKind] = React.useState<
+    "invalid" | "expired" | null
+  >(null);
 
   React.useEffect(() => {
     const supabase = getBrowserSupabase();
     if (!supabase) {
       // Assíncrono de propósito: setState síncrono no corpo do
       // efeito é rejeitado pelo lint (react-hooks/set-state-in-effect).
-      const timer0 = setTimeout(() => setError(true), 0);
+      const timer0 = setTimeout(() => setErrorKind("invalid"), 0);
+      return () => clearTimeout(timer0);
+    }
+    // Verificação rejeitada pelo Supabase (ex.: token expirado ou
+    // já utilizado): o fragmento traz o erro — distingui-lo em vez
+    // de mostrar sempre o genérico.
+    const hashError = parseHashError(window.location.hash);
+    if (hashError) {
+      const kind = classifyHashError(hashError);
+      const timer0 = setTimeout(
+        () => setErrorKind(kind === "token-expired" ? "expired" : "invalid"),
+        0,
+      );
       return () => clearTimeout(timer0);
     }
     const next = resolveCallbackNext(searchParams.get("next"));
@@ -46,7 +64,7 @@ function CallbackHandler() {
       done = true;
       if (timer) clearTimeout(timer);
       if (ok) router.replace(next);
-      else setError(true);
+      else setErrorKind("invalid");
     };
     // A deteção automática do fragmento (#access_token) é assíncrona:
     // ouvir o evento SIGNED_IN evita declarar o link inválido por uma
@@ -82,7 +100,7 @@ function CallbackHandler() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  if (error) {
+  if (errorKind) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-navy-950 px-4">
         <Card className="w-full max-w-md">
@@ -90,12 +108,16 @@ function CallbackHandler() {
             <Logo size={40} />
             <div>
               <h1 className="text-lg font-bold text-ink-900">
-                {t.auth.resetLinkInvalidTitle}
+                {errorKind === "expired"
+                  ? t.auth.resetLinkExpiredTitle
+                  : t.auth.resetLinkInvalidTitle}
               </h1>
             </div>
           </div>
           <Alert variant="danger" className="mb-5">
-            {t.auth.resetLinkInvalidBody}
+            {errorKind === "expired"
+              ? t.auth.resetLinkExpiredBody
+              : t.auth.resetLinkInvalidBody}
           </Alert>
           <Link href="/login">
             <Button variant="primary" className="w-full">
