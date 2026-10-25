@@ -26,6 +26,11 @@ export const t = {
     notConfigured: "Não configurado",
     mvpNote: "MVP em construção",
   },
+  previewView: {
+    title: "Modo visualização temporário (Preview)",
+    body: "Estás a ver o painel sem sessão do Hub, só para visualizar a interface. Não há dados reais, chaves ou ações administrativas neste modo — tudo continua a exigir login. Remove-se assim que a autenticação definitiva estiver resolvida.",
+    loginCta: "Entrar com a conta do Hub",
+  },
   nav: {
     dashboard: "Dashboard",
     catalog: "Catálogo",

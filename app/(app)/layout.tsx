@@ -3,7 +3,9 @@ import { Sidebar } from "@/components/layout/Sidebar";
 import { Topbar } from "@/components/layout/Topbar";
 import { MobileNav } from "@/components/layout/MobileNav";
 import { SetupBanner } from "@/components/layout/SetupBanner";
+import { PreviewViewBanner } from "@/components/layout/PreviewViewBanner";
 import { AuthRedirectRegistrar } from "@/components/auth-redirect";
+import { isPreviewViewMode } from "@/lib/preview-view-mode";
 import { t } from "@/lib/i18n";
 
 /**
@@ -45,13 +47,18 @@ export default async function AppLayout({
   children: React.ReactNode;
 }) {
   const user = await getSessionUser();
-  if (!user) {
+  // Modo visualização temporário (só Preview, sem sessão): permite
+  // VER o painel sem entrar. Sem registar o redirecionador de 401,
+  // para que as páginas mostrem estados vazios/erro honestos em vez
+  // de saltarem para o login. Auth, APIs, RLS e Production intocados.
+  const viewMode = !user && isPreviewViewMode();
+  if (!user && !viewMode) {
     redirect("/login");
   }
 
   return (
     <div className="flex min-h-screen bg-mist">
-      <AuthRedirectRegistrar />
+      {!viewMode && <AuthRedirectRegistrar />}
       <a
         href="#conteudo"
         className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50 focus:rounded-lg focus:bg-gold-500 focus:px-4 focus:py-2 focus:text-sm focus:font-semibold focus:text-navy-950"
@@ -60,7 +67,8 @@ export default async function AppLayout({
       </a>
       <Sidebar />
       <div className="flex min-w-0 flex-1 flex-col">
-        <Topbar userEmail={user.email} />
+        <Topbar userEmail={user?.email ?? null} />
+        {viewMode && <PreviewViewBanner />}
         <SetupBanner />
         <main
           id="conteudo"
