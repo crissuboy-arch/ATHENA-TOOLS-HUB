@@ -35,3 +35,23 @@ export function buildPasswordResetRedirect(origin: string): string {
   const clean = origin.replace(/\/+$/, "");
   return `${clean}/auth/callback?next=/reset-password`;
 }
+
+/**
+ * Deteta um link de recuperação do Supabase Auth que chegou ao
+ * fragmento da URL (`#access_token=…&type=recovery`), em vez de
+ * passar pelo callback. Acontece quando o Supabase ignora o
+ * `redirectTo` (URL fora da allowlist) e volta para o Site URL:
+ * nesse caso a sessão chega à página de login, e é ela que tem
+ * de encaminhar para `/reset-password` — nunca deitar fora o
+ * fragmento com um redirecionamento cego para o login.
+ */
+export function isRecoveryHash(hash: string): boolean {
+  if (!hash) return false;
+  const params = new URLSearchParams(
+    hash.startsWith("#") ? hash.slice(1) : hash,
+  );
+  return (
+    Boolean(params.get("access_token")) &&
+    params.get("type") === "recovery"
+  );
+}

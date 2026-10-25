@@ -30,37 +30,54 @@ function CallbackHandler() {
   const [error, setError] = React.useState(false);
 
   React.useEffect(() => {
+    const supabase = getBrowserSupabase();
+    if (!supabase) {
+      // Assíncrono de propósito: setState síncrono no corpo do
+      // efeito é rejeitado pelo lint (react-hooks/set-state-in-effect).
+      const timer0 = setTimeout(() => setError(true), 0);
+      return () => clearTimeout(timer0);
+    }
+    const next = resolveCallbackNext(searchParams.get("next"));
+    const code = searchParams.get("code");
+    let done = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const finish = (ok: boolean) => {
+      if (done) return;
+      done = true;
+      if (timer) clearTimeout(timer);
+      if (ok) router.replace(next);
+      else setError(true);
+    };
+    // A deteção automática do fragmento (#access_token) é assíncrona:
+    // ouvir o evento SIGNED_IN evita declarar o link inválido por uma
+    // corrida entre a leitura da sessão e a deteção do fragmento.
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === "SIGNED_IN" && session) finish(true);
+    });
     const resolve = async () => {
-      const supabase = getBrowserSupabase();
-      if (!supabase) {
-        setError(true);
-        return;
-      }
-      const next = resolveCallbackNext(searchParams.get("next"));
-      const code = searchParams.get("code");
       try {
         if (code) {
           const { error: exchangeError } =
             await supabase.auth.exchangeCodeForSession(code);
-          if (exchangeError) {
-            setError(true);
-            return;
-          }
+          finish(!exchangeError);
         } else {
           const {
             data: { session },
           } = await supabase.auth.getSession();
-          if (!session) {
-            setError(true);
-            return;
-          }
+          if (session) finish(true);
+          else timer = setTimeout(() => finish(false), 3000);
         }
-        router.replace(next);
       } catch {
-        setError(true);
+        finish(false);
       }
     };
     resolve();
+    return () => {
+      if (timer) clearTimeout(timer);
+      subscription.unsubscribe();
+    };
     // Corre uma única vez ao montar: o link só é válido para uma troca.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -95,7 +112,7 @@ function CallbackHandler() {
       <Card className="w-full max-w-md">
         <div className="flex items-center gap-3">
           <Logo size={40} />
-          <p className="text-sm text-ink-500">{t.auth.sending}</p>
+          <p className="text-sm text-ink-500">{t.auth.processingLink}</p>
         </div>
       </Card>
     </div>

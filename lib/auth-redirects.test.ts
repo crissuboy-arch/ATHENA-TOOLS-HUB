@@ -6,6 +6,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildPasswordResetRedirect,
+  isRecoveryHash,
   resolveCallbackNext,
 } from "@/lib/auth-redirects";
 
@@ -40,5 +41,21 @@ describe("buildPasswordResetRedirect", () => {
     expect(buildPasswordResetRedirect("https://preview.example/")).toBe(
       "https://preview.example/auth/callback?next=/reset-password",
     );
+  });
+});
+
+describe("isRecoveryHash", () => {
+  it("deteta o fragmento de recuperação do Supabase", () => {
+    expect(
+      isRecoveryHash("#access_token=abc&refresh_token=def&type=recovery"),
+    ).toBe(true);
+    expect(isRecoveryHash("access_token=abc&type=recovery")).toBe(true);
+  });
+
+  it("rejeita fragmentos que não são de recuperação", () => {
+    expect(isRecoveryHash("")).toBe(false);
+    expect(isRecoveryHash("#access_token=abc&type=signup")).toBe(false);
+    expect(isRecoveryHash("#type=recovery")).toBe(false);
+    expect(isRecoveryHash("#error=access_denied")).toBe(false);
   });
 });

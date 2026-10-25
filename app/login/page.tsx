@@ -8,30 +8,14 @@ import { Card } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { Alert } from "@/components/ui/Alert";
+import { EyeIcon } from "@/components/ui/EyeIcon";
 import { Logo } from "@/components/layout/Logo";
 import { t } from "@/lib/i18n";
 import { getBrowserSupabase, isSupabaseConfigured } from "@/lib/supabase-browser";
-import { buildPasswordResetRedirect } from "@/lib/auth-redirects";
-
-function EyeIcon({ off = false }: { off?: boolean }) {
-  return (
-    <svg
-      width="20"
-      height="20"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.8"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6-10-6-10-6z" />
-      <circle cx="12" cy="12" r="3" />
-      {off && <line x1="4" y1="4" x2="20" y2="20" />}
-    </svg>
-  );
-}
+import {
+  buildPasswordResetRedirect,
+  isRecoveryHash,
+} from "@/lib/auth-redirects";
 
 function LoginForm() {
   const router = useRouter();
@@ -41,11 +25,42 @@ function LoginForm() {
   const [showPassword, setShowPassword] = React.useState(false);
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
-  const [mode, setMode] = React.useState<"login" | "forgot">("login");
+  const [mode, setMode] = React.useState<"login" | "forgot">(
+    searchParams.get("mode") === "forgot" ? "forgot" : "login",
+  );
   const [forgotLoading, setForgotLoading] = React.useState(false);
   const [forgotSent, setForgotSent] = React.useState(false);
   const [forgotError, setForgotError] = React.useState<string | null>(null);
   const resetDone = searchParams.get("reset") === "success";
+
+  // Recuperação que chegou à tela de login em vez do callback: quando
+  // o Supabase ignora o redirectTo (URL fora da allowlist) e volta
+  // para o Site URL, a sessão de recuperação pode aterrar aqui, no
+  // fragmento da URL. Nesse caso, encaminhar para /reset-password —
+  // nunca deitar fora o fragmento nem mostrar o login como se nada
+  // tivesse acontecido. Sem fragmento de recuperação, zero efeito.
+  React.useEffect(() => {
+    if (!isRecoveryHash(window.location.hash)) return;
+    const supabase = getBrowserSupabase();
+    if (!supabase) return;
+    let done = false;
+    const go = () => {
+      if (done) return;
+      done = true;
+      router.replace("/reset-password");
+    };
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === "SIGNED_IN" && session) go();
+    });
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session) go();
+    });
+    return () => subscription.unsubscribe();
+    // Corre uma única vez ao montar: o fragmento só existe no link.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Honest state: without Supabase there is no auth backend — explain,
   // don't render a login form that can never work.

@@ -7,6 +7,7 @@ import { Card } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { Alert } from "@/components/ui/Alert";
+import { EyeIcon } from "@/components/ui/EyeIcon";
 import { Logo } from "@/components/layout/Logo";
 import { t } from "@/lib/i18n";
 import { getBrowserSupabase } from "@/lib/supabase-browser";
@@ -128,9 +129,9 @@ export default function ResetPasswordPage() {
                   }
                   aria-pressed={showPassword}
                   onClick={() => setShowPassword((v) => !v)}
-                  className="text-sm font-medium text-ink-500 hover:text-ink-900 focus:outline-none"
+                  className="text-ink-500 hover:text-ink-900 focus:outline-none"
                 >
-                  {showPassword ? t.auth.hidePassword : t.auth.showPassword}
+                  <EyeIcon off={showPassword} />
                 </button>
               }
             />

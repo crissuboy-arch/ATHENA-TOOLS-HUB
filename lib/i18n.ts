@@ -74,6 +74,7 @@ export const t = {
     requestNewLink: "Pedir novo link",
     saving: "A guardar…",
     sending: "A enviar…",
+    processingLink: "A processar o link de recuperação…",
     setupRequiredTitle: "Supabase ainda não configurado",
     setupRequiredBody:
       "O login depende do Supabase. Configure NEXT_PUBLIC_SUPABASE_URL e NEXT_PUBLIC_SUPABASE_ANON_KEY nas variáveis de ambiente e acesse Configurações para concluir a conexão.",
