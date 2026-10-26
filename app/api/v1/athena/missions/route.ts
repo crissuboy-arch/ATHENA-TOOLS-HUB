@@ -6,12 +6,15 @@
  *
  * Fluxo:
  *   1. valida o payload da missão (400 VALIDATION se inválido);
- *   2. resolve requires_human_approval contra o contrato da tool
+ *   2. verificação agente↔ferramenta (Opção A, fail-closed): integração
+ *      sem agente, agente desconhecido, tool não associada ou schema
+ *      indisponível (0012 por aplicar) → 403 FORBIDDEN, sem criar job;
+ *   3. resolve requires_human_approval contra o contrato da tool
  *      (409 CONFLICT em divergência — sem ajuste silencioso);
- *   3. cria o job de forma idempotente: mission_id é preservado como
+ *   4. cria o job de forma idempotente: mission_id é preservado como
  *      idempotencyKey — reenvio do mesmo mission_id retorna o job
  *      original (200 + deduplicated:true; primeira vez: 201);
- *   4. se a missão exige aprovação humana, o job cai em PENDING_APPROVAL
+ *   5. se a missão exige aprovação humana, o job cai em PENDING_APPROVAL
  *      e a resposta aponta o endpoint de decisão do sistema de approvals
  *      existente.
  *
@@ -33,6 +36,7 @@ import {
   buildMissionResponse,
   resolveMissionApproval,
 } from "@/lib/athena/missions";
+import { authorizeMissionToolAccess } from "@/lib/athena/agent-intake";
 import { missionToJobInput, parseMission } from "@/lib/athena/contract";
 
 export async function POST(request: NextRequest) {
@@ -54,6 +58,15 @@ export async function POST(request: NextRequest) {
     }
     const mission = parseMission(body);
     const orgId = await resolveOrgScope(auth, mission.org_id);
+
+    // Verificação agente↔ferramenta (Opção A, fail-closed) ANTES de
+    // qualquer criação: negado = 403 estruturado, job nunca criado.
+    const gate = await authorizeMissionToolAccess(auth, mission.tool_id);
+    if (!gate.allowed) {
+      throw HubError.forbidden(
+        `Missão negada pela associação agente↔ferramenta (${gate.reason}).`,
+      );
+    }
 
     // Divergência de aprovação → 409 (explícito, sem fallback).
     const requiresHumanApproval = resolveMissionApproval(mission);

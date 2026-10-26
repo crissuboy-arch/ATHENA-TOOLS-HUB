@@ -75,6 +75,17 @@ vi.mock("@/lib/api-auth", async (importOriginal) => {
   };
 });
 
+// Gate agente↔ferramenta mockado como PERMITIDO neste ficheiro: este
+// teste prova o pipeline (missão → job → resposta); a ENFORCEMENT do
+// gate (permitir/negar, fail-closed, sem crash) é provada em
+// lib/athena/agent-intake.test.ts e tests/athena-agent-intake-route.test.ts.
+vi.mock("@/lib/athena/agent-intake", () => ({
+  authorizeMissionToolAccess: vi.fn(async () => ({
+    allowed: true,
+    reason: "allowed",
+  })),
+}));
+
 // Store em memória para o jobs service mockado (idempotência real).
 const store = new Map<string, Record<string, unknown>>();
 let jobCounter = 0;

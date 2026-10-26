@@ -82,6 +82,16 @@ vi.mock("@/lib/jobs/service", () => ({
   getJobAssets: getJobAssetsMock,
 }));
 
+// Gate agente↔ferramenta mockado como PERMITIDO: este ficheiro prova a
+// ponte Athena (missão → job); a enforcement do gate é provada em
+// lib/athena/agent-intake.test.ts e tests/athena-agent-intake-route.test.ts.
+vi.mock("@/lib/athena/agent-intake", () => ({
+  authorizeMissionToolAccess: vi.fn(async () => ({
+    allowed: true,
+    reason: "allowed",
+  })),
+}));
+
 vi.mock("@/lib/athena/missions", async (importOriginal) => {
   const actual =
     await importOriginal<typeof import("@/lib/athena/missions")>();

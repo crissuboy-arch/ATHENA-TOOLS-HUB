@@ -192,6 +192,8 @@ export interface Integration {
   created_by: string | null;
   created_at: string;
   updated_at: string;
+  /** Agente que a integração representa (Opção A, migration 0012 PREPARADA — aplicação NÃO autorizada; NULL = sem agente vinculado). */
+  agent_id: string | null;
 }
 
 export interface ExecutionJob {
