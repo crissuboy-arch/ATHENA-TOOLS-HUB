@@ -389,3 +389,42 @@ comprovada**. Nada neste documento afirma que a ATHENA já consome o Hub.
   autenticação, execução funcional, idempotência, negativos), **não
   prova integração real com ScalaFlow nem ATHENA real**, nem
   comportamento em produção, nem HMAC com segredo real (T4 pendente).
+
+## Atualização 26/10/2026 — preparação Opção A + G3 (`feat/opcao-a-g3-preparacao`, local, sem push)
+
+Corpo acima preservado. O que mudou nesta preparação (tudo PREPARAÇÃO,
+nada aplicado, nada merged, nada deployed):
+
+- **Decisão registada:** a proprietária APROVOU a Opção A como
+  arquitetura das permissões agente↔ferramenta, mas NÃO autorizou a
+  aplicação da migration (ver `docs/ATHENA_AGENT_TOOL_SCHEMA_DECISION.md`,
+  registo da decisão preenchido).
+- **Migration 0012 PREPARADA, NÃO APLICADA:**
+  `supabase/migrations/0012_integration_agent_link.sql`
+  (`integrations.agent_id`, nullable, sem backfill). Nenhum SQL foi
+  corrido contra base nenhuma.
+- **Gate LIGADO à intake:** `lib/athena/agent-intake.ts` — o `POST
+  /api/v1/athena/missions` consulta a verificação ANTES de criar o job.
+  Sem agente, agente desconhecido, tool não associada ou schema
+  indisponível (0012 por aplicar) → 403 FORBIDDEN estruturado, job
+  nunca criado, nunca 500. Sessão humana: isenção explícita documentada
+  (o gate rege identidades m2m).
+- **Descoberta:** `agentPermissions.linked` continua `false` — o vínculo
+  só existe de facto depois da 0012 aplicada + agente vinculado + linhas
+  semeadas. Não foi antecipado para `true`.
+- **G3:** plano atualizado (`docs/G3_TEST_PLAN.md` §5) com o T7 ao vivo
+  (associação), pré-condições P5–P8 e rollback. Pré-requisitos que
+  continuam pendentes: T4, login definitivo, emissão da chave da Athena
+  (só `tools:read + jobs:read + jobs:write`, nunca `approvals:decide`).
+- **Reconciliação:** esta branch une a linha discovery com os documentos
+  G3 (`docs/G3_TEST_PLAN.md`, `docs/ATHENA_OPERATIONAL_CONTRACT.md`,
+  adenda G2 do plano 2D) — nenhuma das duas linhas perdeu trabalho.
+- **Testes:** suite 611/611 (55 ficheiros), typecheck e lint limpos
+  (baseline anterior: 592/592). O que os testes NÃO provam continua
+  igual: nada disto prova ScalaFlow real, ATHENA real, produção, login
+  definitivo ou HMAC com segredo real.
+- **O que falta para UMA ferramenta executável (ordem atualizada):**
+  1. aplicação da 0012 (autorização específica dela, pendente);
+  2. agente vinculado + permissões semeadas; 3. executor real (VectorCraft
+  a confirmar); 4. T4; 5. login definitivo; 6. chave da Athena + G3
+  (T1–T7); 7. lado ATHENA/Cláudio (merges, deploy, `verify`); 8. Fase 11.

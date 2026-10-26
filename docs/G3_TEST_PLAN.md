@@ -164,6 +164,92 @@ revogação, e o resultado de cada passo T1–T6.
 
 ---
 
+## 5. Atualização 26/10/2026 — preparação Opção A + T7 (NÃO EXECUTAR SEM AUTORIZAÇÃO)
+
+**Estado:** secção acrescentada na preparação Opção A
+(branch `feat/opcao-a-g3-preparacao`, local, sem push). Nada aqui foi
+executado contra a base viva. A arquitetura Opção A está APROVADA pela
+Cristiane; a migration 0012 está PREPARADA mas a sua APLICAÇÃO NÃO está
+autorizada. O T7 abaixo só corre depois dessa autorização específica
++ da ligação do agente + das linhas de permissão.
+
+### 5.1 Pré-condições novas (somam-se a P0–P4, não as substituem)
+
+| # | Pré-condição | Quem / como | Se faltar |
+|---|---|---|---|
+| P5 | **Migration 0012 aplicada** (`integrations.agent_id`) — por ela, no SQL editor, na ordem numérica, **só com autorização específica dela** (NÃO dada nesta preparação). | Cristiane | Sem a coluna, o gate nega tudo (fail-closed) — o T7 falha por desenho, não é bug |
+| P6 | **Agente vinculado + permissões semeadas:** a integração da Athena (registo G2.5) com `agent_id` preenchido + linhas em `agent_tool_permissions` para o agente (pelo menos uma tool associada e uma NÃO associada, para os dois casos do T7). | Cristiane, SQL editor, valores de teste | Sem vínculo, tudo é negado (caso já provado nos testes automatizados, não no smoke) |
+| P7 | **T4 continua pendente** (`HUB_SIGNING_SECRETS_JSON` + redeploy) — o T7 NÃO depende dele (o gate corre antes da assinatura ser exigida; a assinatura continua opcional até ao G4). | Cristiane / quem gere o deploy | T4 fica para depois do registo do segredo, como no T4 original |
+| P8 | **Login definitivo continua pendente** (allowlist do callback + UM link novo) e **a chave da Athena continua por emitir** (só `tools:read + jobs:read + jobs:write`, nunca `approvals:decide`) — o T7 usa a chave de TESTE do T1, nunca uma chave de produção. | Cristiane | Sem sessão owner/admin não há T1, logo não há T7 |
+
+### 5.2 T7 — Associação agente↔ferramenta (ao vivo, com a chave de TESTE)
+
+**Ordem:** corre depois de T5 e antes de T6 (a chave de teste ainda
+está viva; T6 revoga-a no fim). Usa `POST /api/v1/athena/missions`
+com a chave de TESTE do T1. O T7 prova a CRIAÇÃO (gate), não a
+execução: tools com `executionReady = false` ficam `QUEUED` ou
+`PENDING_APPROVAL` — isso é o estado honesto, não falha do T7.
+
+**T7a — Tool associada → missão aceite.**
+**Como:** `POST /api/v1/athena/missions` com `tool_id` da tool
+associada ao agente (P6) e `mission_id` novo.
+**PASS esperado:** `201` (ou `200 + deduplicated` em reenvio) e job
+criado com estado `QUEUED` ou `PENDING_APPROVAL`.
+**FAIL se:** `403` (o vínculo ou a linha não estão como em P6 —
+rever o seed) ou `500` (nunca confundir com negação: 500 é infra).
+
+**T7b — Tool NÃO associada → missão negada, job nunca criado.**
+**Como:** `POST /api/v1/athena/missions` com `tool_id` de uma tool
+existente mas NÃO associada ao agente (P6) e `mission_id` novo.
+**PASS esperado:** `403 FORBIDDEN` com a reason
+`no-agent-permission-row` na mensagem, e **nenhum job criado** (a
+confirmação é a ausência: repetir `GET /api/v1/athena/missions/{id}`
+ou listar jobs não mostra a missão).
+**FAIL se:** `201` (o gate não está a ser aplicado — achado crítico;
+parar aqui) ou `500` (o gate nunca pode dar 500: negação é 403).
+
+**O que o T7 ao vivo NÃO testa (de propósito):**
+- **Schema indisponível** (coluna por aplicar → negação): provado nos
+  testes automatizados (`lib/athena/agent-intake.test.ts`, store que
+  lança). Testá-lo ao vivo exigiria largar a coluna — destrutivo e
+  sem valor — por isso NÃO é proposto.
+- **Integração sem agente** (`agent_id` NULL → negação): provado nos
+  testes automatizados. Ao vivo, implicaria desligar o vínculo do
+  registo G2.5 e voltar a ligá-lo — só se ela o quiser como variante,
+  com restauro imediato documentado; não faz parte do T7 base.
+- **Execução real da tool:** continua fora do G3 (0 executores
+  prontos). O T7 valida a permissão de CRIAÇÃO, não a execução.
+
+### 5.3 Critérios de fecho atualizados
+
+- **PASS total:** T1–T7 todos PASS → G3 validado incluindo a
+  associação; o próximo passo continua a ser o G4 (com o lado do
+  Cláudio) + a primeira ferramenta executável (fase posterior, com
+  autorização própria).
+- **Qualquer FAIL em T7:** registar o passo, o código e a reason;
+  **não declarar a ativação**. Um 403 inesperado em T7a é problema de
+  seed (P6), não do gate; um 201 em T7b é achado crítico do gate.
+
+### 5.4 Rollback deste plano (descrever, não executar)
+
+- **Agora (nada aplicado):** não há nada a reverter. O branch de
+  preparação é local e sem push: o rollback é não fazer merge dele
+  e, se ela assim decidir, apagá-lo. A migration 0012 é só um
+  ficheiro — apagá-lo do branch é o rollback da preparação.
+- **Se a 0012 vier a ser aplicada no futuro e precisar de reversão:**
+  o rollback é OUTRA migration (ex.: 0013) que larga a coluna
+  `integrations.agent_id` — nunca uma edição da 0012 aplicada, nunca
+  um DROP manual fora de uma migration revista. Efeito do rollback:
+  o gate volta a negar tudo por coluna inexistente (fail-closed) —
+  seguro, mas bloqueia missões com verificação por agente até novo
+  vínculo — por isso o rollback também exige autorização explícita
+  dela. O registo G2.5 e as linhas de permissão NÃO são apagados
+  pelo rollback da coluna (só o vínculo fica inatingível).
+- **Rollback do smoke (T1–T7):** o de sempre — T6 revoga a chave de
+  teste (revogar, nunca apagar). Nonces expiram em 600 s.
+
+---
+
 ## 4. O que este plano NÃO autoriza
 
 - Não autoriza o deploy (P0 é decisão dela à parte).

@@ -117,8 +117,30 @@ Passos após a decisão (NÃO executados aqui, por ordem):
   mapeadas — por isso a coluna é nullable e o rollout é por
   integração, não global.
 
-## Registo da decisão (a preencher por quem decidir)
+## Registo da decisão (preenchido 26/10/2026)
 
-- Decisão: [ ] Opção A / [ ] Opção B / [ ] outra: _______________
-- Decidido por: _______________ · Data: _______________
-- Migration autorizada: [ ] não / [ ] sim, branch: _______________
+- Decisão: **[x] Opção A** (arquitetura aprovada)
+- Decidido por: **Cristiane** · Data: **26/10/2026**
+- Migration autorizada: **[x] não** — a migration 0012 foi PREPARADA
+  (`supabase/migrations/0012_integration_agent_link.sql`) na branch
+  `feat/opcao-a-g3-preparacao` (local, sem push); a APLICAÇÃO continua
+  pendente de autorização específica dela.
+
+### Atualização 26/10/2026 — o que a decisão desbloqueou (e o que não)
+
+Dos "Passos após a decisão" acima, nesta preparação:
+
+1. **Migration escrita (ficheiro) — FEITO, não aplicada.** Aditiva,
+   idempotente, sem backfill; revista no branch de preparação; nenhum
+   SQL corrido contra base nenhuma.
+2. **Aplicação — PENDENTE** (autorização específica dela, não dada).
+3. **Resolução uuid→slug + gate ligado — FEITO em código**
+   (`lib/athena/agent-intake.ts`, ligado ao `POST
+   /api/v1/athena/missions`, fail-closed, 19 testes novos). Enquanto a
+   0012 não estiver aplicada, o gate nega por coluna inexistente — o
+   comportamento fail-closed previsto, não um bug.
+4. **Testes da associação — FEITOS** (automatizados, com mocks; o T7 ao
+   vivo está no `docs/G3_TEST_PLAN.md` §5, por executar após P5+P6).
+5. **Descoberta `agentPermissions.linked: true` — PENDENTE.** Só muda
+   quando o vínculo existir de facto (0012 aplicada + agente vinculado
+   + linhas semeadas). Até lá, `false` é o valor honesto.
