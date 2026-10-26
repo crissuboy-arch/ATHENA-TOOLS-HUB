@@ -38,9 +38,37 @@ export async function GET(
       auth,
       request.nextUrl.searchParams.get("orgId"),
     );
-    if (!isSupabaseConfigured()) throw HubError.notConfigured();
-
     const { id } = await params;
+
+    // CORREÇÃO ATHENA CONNECT (2026-10-26): o fallback de contrato em
+    // código era inalcançável sem Supabase — o `throw notConfigured()`
+    // corria ANTES dele, por isso uma Athena sem BD configurada nunca
+    // descobria o contrato de uma tool. Sem BD, só o contrato em código
+    // pode responder (é público, sem dados de org); sem adapter, 404.
+    if (!isSupabaseConfigured()) {
+      const adapterOnly = toolRegistry.adapterFor(id);
+      if (adapterOnly) {
+        return apiJson(
+          {
+            tool: {
+              id: adapterOnly.id,
+              name: adapterOnly.id,
+              description:
+                "Contrato registrado em código; ainda sem entrada no catálogo (tabela tools).",
+              version: adapterOnly.version,
+              status: "in-development",
+              capabilities: adapterOnly.capabilities,
+              integrationStatus: integrationStatusFor(adapterOnly.id),
+              dryRun: adapterOnly.dryRunInfo(),
+              updatedAt: null,
+            },
+          },
+          { requestId, headers: rl.headers },
+        );
+      }
+      throw HubError.notFound("Tool");
+    }
+
     const supabase = getSupabaseAdmin();
     // Capabilities reais vêm embutidas de `tool_capabilities` (ver toToolDTO).
     // FASE 2A (C1): id + org_id — uma tool de outra org é invisível aqui.

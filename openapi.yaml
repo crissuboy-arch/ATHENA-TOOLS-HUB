@@ -860,6 +860,45 @@ paths:
         '429': { $ref: '#/components/responses/RateLimited' }
         '503': { $ref: '#/components/responses/NotConfigured' }
 
+  /athena/tools:
+    get:
+      summary: Descoberta de ferramentas pela ATHENA Control (contratos)
+      description: |
+        Auth: sessão ou Bearer <api key> com scope `tools:read`. Ao
+        contrário de GET /tools (linhas da tabela `tools` por org, 503
+        sem Supabase), esta rota descreve CONTRATOS em código (adapters
+        + catálogo) e não exige Supabase configurado. Cada entrada traz
+        capabilities, `integrationStatus` ("ready" só com executor real
+        — hoje sempre "pending"), `requiresApproval` do contrato e
+        `inputs` quando especificados. `agentPermissions.linked: false`
+        declara honestamente que não há vínculo integração↔agente no
+        schema (integrations sem agent_id): nenhuma permissão por
+        agente é afirmada. Decisões de aprovação são sempre humanas
+        (`canDecideApprovals: false` para chaves m2m).
+      parameters:
+        - $ref: '#/components/parameters/OrgId'
+      responses:
+        '200':
+          description: Lista de descoberta Athena
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  orgId: { type: string }
+                  tools:
+                    type: array
+                    items: { type: object }
+                  execution:
+                    type: object
+                    properties:
+                      ready: { type: integer }
+                      pending: { type: integer }
+                      total: { type: integer }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+
   /automations:
     get:
       summary: Catálogo de capacidades de automação (somente leitura)
