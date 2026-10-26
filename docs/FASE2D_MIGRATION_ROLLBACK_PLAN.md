@@ -1,9 +1,41 @@
 # FASE 2D — Plano de migração (0011) e rollback (C3 + C5)
 
-**Estado em 2026-10-23:** a migration está **PREPARADA** e o código está
-**IMPLEMENTADO** na branch `feat/fase-2d-c3-c5`. **Nada foi aplicado a
-base nenhuma, nada está ativo em produção** (não há deploy autorizado).
-Aplicar, validar e ativar são gates separados, cada um com autorização
+## 0. MARCO G2 — CONCLUÍDO (24/10/2026) — adenda, sem reescrever o passado
+
+**O gate G2 está CONCLUÍDO.** Fonte: **atualização oficial da
+Cristiane em 24/10/2026** — a migration `0011_api_keys.sql` foi
+aplicada diretamente no Supabase oficial do Tools Hub (projeto
+`bvsvqueeihljwksemfmz`), **por intermédio do ChatGPT, fora do
+trabalho dos agentes**. Resultado confirmado por ela: **27 tabelas**;
+`api_keys` e `api_request_nonces` criadas; RLS ativa nas duas;
+**zero policies nas duas (intencional)**; índices e constraints
+verificados; **zero chaves emitidas; zero integrações; nenhum deploy
+realizado**.
+
+Consequências deste marco (ler com o resto do documento):
+- O ficheiro `supabase/migrations/0011_api_keys.sql` **não foi
+  alterado** por esta adenda — uma migration aplicada nunca se edita.
+  O cabeçalho do ficheiro (que diz "NOT been applied") está
+  **ultrapassado por este marco**: vale o que está registado aqui.
+- A secção §3/G2 abaixo passa a ser **histórico do procedimento**
+  (como foi feito), não instrução pendente.
+- **Nada mais mudou com o G2:** nenhum deploy foi feito (o código em
+  produção continua a ser o anterior à 2D); nenhuma chave foi emitida;
+  o registo inicial da Athena (**G2.5**) continua **por fazer**; o
+  smoke do **G3** continua **por autorizar e por executar**. A
+  verificação da base viva **não foi refeita pelos agentes** nesta
+  fase — o registo acima reproduz a confirmação dela.
+- Próximos gates, por ordem: **G2.5** (registo inicial da Athena,
+  manual, por ela) → **G3** (validação real — ver
+  `docs/G3_TEST_PLAN.md`, que depende de decisão dela sobre onde corre
+  o código novo, pois **nenhum deploy foi feito**) → **G4** (a Athena
+  passa a assinar).
+
+**Estado em 2026-10-23 (texto original, preservado):** a migration
+estava **PREPARADA** e o código estava **IMPLEMENTADO** na branch
+`feat/fase-2d-c3-c5`. **Nada tinha sido aplicado a base nenhuma, nada
+estava ativo em produção** (não havia deploy autorizado). Aplicar,
+validar e ativar são gates separados, cada um com autorização
 expressa da Cristiane — este documento diz exatamente o que acontece em
 cada um e como se volta atrás.
 
