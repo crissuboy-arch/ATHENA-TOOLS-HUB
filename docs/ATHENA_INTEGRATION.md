@@ -2,6 +2,12 @@
 
 > Público: Cláudio (arquitetura multiagentes) e quem for implementar o lado
 > cliente na ATHENA Control. Contrato formal: [`openapi.yaml`](../openapi.yaml).
+>
+> **Atualização 26/10/2026 (branch `feat/athena-connect-discovery`): ver a
+> secção final "Atualização 26/10/2026 — entrega" — descoberta Athena,
+> permissões fail-closed, estado honesto atual e correções de estado face
+> a este documento (base pré-G2). O corpo abaixo mantém-se como contrato
+> de base; onde houver divergência, vale a atualização datada.**
 
 ## Visão geral
 
@@ -268,3 +274,118 @@ Pontos de ligação que a ATHENA Control precisa implementar do lado cliente:
    decisões de aprovação exigem `owner`/`admin` para usuários humanos.
 9. **Verificação de org** — a chave é vinculada a uma org; a Control deve
    guardar `orgId` por integração e nunca cruzá-los.
+
+---
+
+## Atualização 26/10/2026 — entrega (`feat/athena-connect-discovery`)
+
+**Distinção que vale em toda esta secção: CÓDIGO PRONTO vs CONECTADO vs
+PUBLICADO vs EXECUÇÃO REAL COMPROVADA.** Hoje: código pronto (descoberta
++ permissões fail-closed), nada conectado de ponta a ponta a partir
+desta branch, nada publicado a partir desta branch, **zero execução real
+comprovada**. Nada neste documento afirma que a ATHENA já consome o Hub.
+
+### Correções de estado face ao corpo acima (base pré-G2)
+
+- A migration `0011_api_keys.sql` já não está "preparada, não aplicada":
+  **segundo atualização da Cristiane de 24/10, o G2 foi concluído com a
+  0011 aplicada** no Supabase oficial (por ela via ChatGPT). Os
+  endpoints de chaves já não devolvem 501 por esse motivo.
+- O registo inicial da Athena (G2.5) já não está "por criar": **segundo
+  confirmação da Cristiane de 25/10**, org "Ofensiva Criativa" e
+  integração `provider: athena`, `state: connected` foram registadas.
+  **Verificação independente por agentes NÃO feita** (service_role
+  nunca fornecida): o lado ATHENA deve tratar o registo como a
+  confirmar no primeiro smoke autenticado (G3 T1), não como provado.
+- Nonces anti-replay para chaves da tabela `api_keys` são persistidos em
+  BD (insert-first, atómico entre instâncias); só as chaves legadas
+  mantêm rastreio em memória (TTL 10 min).
+
+### Novo: descoberta para a ATHENA — `GET /api/v1/athena/tools`
+
+- Auth: Bearer, scope `tools:read`. **Não exige Supabase configurado**:
+  descreve contratos, não linhas por org.
+- Por tool: `id, name, description, capabilities, catalogState,
+  integrationStatus, executionReady, requiresApproval, estimatedCost,
+  inputs, source, agentPermission`.
+- `integrationStatus`: `"ready"` só com executor real conectado — **hoje
+  sempre `"pending"`**. Resumo honesto: `execution: { ready: 0, pending:
+  N, total: N }` — hoje `ready: 0`.
+- Chamador m2m: `caller.canDecideApprovals: false`. Permissões por
+  agente: `agentPermissions: { linked: false, note: … }` e
+  `agentPermission: null` por tool enquanto não houver vínculo
+  resolvido. **Nenhuma permissão é inventada.**
+- Catálogo hoje: 12 tools, 4 adapters (`vectorcraft`, `hyperframes`,
+  `apify-mcp`, `mkvideos`), **0 prontas** (`executionReady = false` em
+  todos). Jobs sem executor real ficam `QUEUED` ou `PENDING_APPROVAL` e
+  nunca completam. O adapter `mkvideos` lança 501 no Hub: o executor
+  real vive na ATHENA (Fase 7, Cláudio). **Não existe adapter nem
+  entrada de catálogo "scalaflow" neste repo.**
+- Também novo: `GET /api/v1/tools/{id}` sem BD responde 200 com o
+  contrato em código (fallback antes inalcançável) ou 404 estruturado.
+
+### Novo: missões Athena (contrato já existente, agora documentado aqui)
+
+- `POST /api/v1/athena/missions` (scope `jobs:write`) e `GET
+  /api/v1/athena/missions/{id}` (scope `jobs:read`, **polling** — a
+  entrega de webhooks/callbacks NÃO está implementada).
+- **Idempotência**: `mission_id` (ATHENA) = `idempotency_key` do job por
+  org. Primeira vez → **201**; reenvio do mesmo `mission_id` → **200 +
+  `deduplicated: true`**.
+- Mapeamento Hub↔ATHENA (total, sem aproximações): `COMPLETED →
+  SUCCEEDED`, `PENDING_APPROVAL → AWAITING_APPROVAL`; estado desconhecido
+  = exceção. Divergência de aprovação → **409 CONFLICT**.
+- Estados de job: `CREATED → VALIDATING → PENDING_APPROVAL / QUEUED →
+  RUNNING → COMPLETED / FAILED / CANCELLED`.
+
+### Permissões — o que está garantido e o que falta
+
+- Chave futura da ATHENA: só `tools:read + jobs:read + jobs:write`,
+  **nunca** `approvals:decide` efetivo (`requireHumanSession` recusa
+  qualquer contexto m2m na decisão, mesmo com o scope concedido).
+- A tabela `agent_tool_permissions` existe (migration 0008) e a
+  primitiva pura fail-closed existe (`lib/athena/agent-permissions.ts`),
+  mas **NÃO está ligada à intake de missões** — bloqueio de schema
+  documentado em `docs/ATHENA_AGENT_TOOL_SCHEMA_DECISION.md`. Até à
+  decisão, as missões autorizam só por scope da chave.
+- **⚠️ `HUB_SIGNING_SECRETS_JSON` NÃO EXISTE no servidor (T4
+  pendente).** Sem ela, uma assinatura HMAC apresentada não valida
+  (→ 401). Bloqueador do G3 ponta a ponta; ação de quem gere o deploy +
+  redeploy. Nenhuma credencial é criada nesta etapa (Fase 11).
+
+### O que NÃO existe (lista honesta, 26/10/2026)
+
+- Nenhum executor real ligado a nenhuma tool.
+- Nenhum botão "Conectar ferramenta": "Configurar" não grava nada,
+  "Testar conexão" está desativado, não existe API de configuração/teste
+  de integrações. A "conexão" real é programática: emissão de chave.
+- Nenhum vínculo agente↔integração no schema (decisão pendente).
+- Nenhuma entrega de webhooks. Nenhuma entrada "scalaflow" no catálogo.
+
+### O que falta para pelo menos UMA ferramenta executável (por ordem)
+
+1. Decisão de schema agente↔integração (Cristiane, ou conjunta com o
+   Cláudio) — ver `docs/ATHENA_AGENT_TOOL_SCHEMA_DECISION.md`.
+2. Executor real ligado a ≥1 tool. Candidata: VectorCraft (viabilidade a
+   confirmar; HyperFrames é motor de composição, não executor do Hub).
+3. T4: `HUB_SIGNING_SECRETS_JSON` no servidor + redeploy.
+4. Login definitivo do Hub: callback do alias na allowlist do Supabase
+   + UM link novo clicado de imediato (sessão da Cristiane).
+5. Emissão da chave da ATHENA (só após 1–4) + G3 ponta a ponta (T1–T6).
+6. Lado ATHENA/Cláudio: merges (`feat/athena-control`,
+   `feat/athena-blog-team`, `feat/athena-mkvideos-integration`), deploy
+   do Control, correção da semântica do `verify` (hoje: health pública
+   dá "Conectado" — um GET 2xx/3xx não prova dados nem execução),
+   confirmação das linhas do Connect no banco da VPS (a contagem "7 vs
+   6" não fecha a partir deste repo).
+7. Fase 11 para qualquer credencial real, missão real ou gasto.
+
+### Testes desta entrega (o que provam e o que NÃO provam)
+
+- Suite: **592/592 (53 ficheiros)**, `typecheck` e `lint` limpos —
+  números re-corridos nesta etapa, não herdados.
+- O teste ATHENA → ScalaFlow é **mock dos dois lados** (chamador mock +
+  ferramenta mock com stats em fixture): prova o contrato (HTTP,
+  autenticação, execução funcional, idempotência, negativos), **não
+  prova integração real com ScalaFlow nem ATHENA real**, nem
+  comportamento em produção, nem HMAC com segredo real (T4 pendente).
