@@ -91,9 +91,10 @@ export default function NewJobClient({ orgs }: { orgs: Org[] }) {
   // Pure data fetch (no setState inside): safe to call from effects via
   // .then() callbacks (React 19 lint rule) and from event handlers.
   const fetchTools = useCallback(async (): Promise<Tool[]> => {
-    const body = await apiGet<{ tools: Tool[] }>("/tools");
+    if (!orgId) return [];
+    const body = await apiGet<{ tools: Tool[] }>(`/tools?orgId=${encodeURIComponent(orgId)}`);
     return body.tools ?? [];
-  }, []);
+  }, [orgId]);
 
   function toolsLoadErrorMessage(err: unknown): string {
     return isDbNotConfigured(err)
