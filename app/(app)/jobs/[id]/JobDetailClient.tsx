@@ -85,7 +85,9 @@ export default function JobDetailClient({
     }
     let toolName: string | null = null;
     try {
-      const toolsBody = await apiGet<{ tools: Tool[] }>("/tools");
+      const toolsBody = await apiGet<{ tools: Tool[] }>(
+        withOrg("/tools", orgId as string),
+      );
       toolName = (toolsBody.tools ?? []).find((t) => t.id === jobBody.job.toolId)?.name ?? null;
     } catch {
       /* toolName stays null */

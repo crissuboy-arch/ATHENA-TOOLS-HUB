@@ -144,12 +144,30 @@ export default function DashboardClient({ orgs }: { orgs: Org[] }) {
   const { orgId } = useOrg(orgs);
   // FASE 2B: tools com o orgId da org ativa (exigido desde a C1).
   const tools = useApiList(
-    orgId ? withOrg("/api/v1/tools", orgId) : "/api/v1/tools"
+    orgId ? withOrg("/api/v1/tools", orgId) : "/api/v1/tools",
   );
-  const integrations = useApiList("/api/v1/integrations");
-  const jobs = useApiList("/api/v1/jobs?limit=10");
-  const approvals = useApiList("/api/v1/approvals?limit=10");
-  const results = useApiList("/api/v1/results?limit=10");
+  // Antes: /api/v1/integrations e /api/v1/results NÃO existiam (404
+  // permanente) e jobs/approvals iam sem orgId (400 para sessões).
+  // Agora: tudo com orgId, resultados = jobs concluídos, e a lista
+  // de integrações vem da rota GET /api/v1/integrations (nova).
+  const integrations = useApiList(
+    orgId ? withOrg("/api/v1/integrations", orgId) : "/api/v1/integrations",
+  );
+  const jobs = useApiList(
+    orgId
+      ? withOrg("/api/v1/jobs?page=1&perPage=10", orgId)
+      : "/api/v1/jobs?page=1&perPage=10",
+  );
+  const approvals = useApiList(
+    orgId
+      ? withOrg("/api/v1/approvals?page=1&perPage=10", orgId)
+      : "/api/v1/approvals?page=1&perPage=10",
+  );
+  const results = useApiList(
+    orgId
+      ? withOrg("/api/v1/jobs?status=COMPLETED&page=1&perPage=10", orgId)
+      : "/api/v1/jobs?status=COMPLETED&page=1&perPage=10",
+  );
 
   const activeJobs = jobs.items.filter((j) =>
     ACTIVE_JOB_STATES.has(String(j.status ?? j.state ?? ""))
@@ -199,7 +217,7 @@ export default function DashboardClient({ orgs }: { orgs: Org[] }) {
                 <rect x="14" y="14" width="7" height="7" rx="1.5" />
               </StatIcon>
             }
-            {...statProps(tools, tools.total ?? 0)}
+            {...statProps(tools, tools.items.length)}
           />
         )}
         {integrations.loading ? (

@@ -41,6 +41,22 @@ interface ToolCapabilityRow {
  * - a tabela `tools` NÃO tem coluna `version`; "0.0.0" é o default honesto
  *   documentado (histórico de versões: tabela `tool_versions`, FASE 2).
  */
+export interface ToolsListResponse {
+  tools: ToolDTO[];
+  /** Alias para consumidores genéricos (ex.: useApiList do dashboard). */
+  items: ToolDTO[];
+  total: number;
+}
+
+/**
+ * Forma da lista: `tools` é o contrato histórico; `items` + `total`
+ * são aliases aditivos para consumidores que só entendem listas
+ * genéricas — sem eles, o dashboard lia sempre 0 ferramentas.
+ */
+export function buildToolsListResponse(tools: ToolDTO[]): ToolsListResponse {
+  return { tools, items: tools, total: tools.length };
+}
+
 export function toToolDTO(row: Record<string, unknown>): ToolDTO {
   const embedded = row.tool_capabilities;
   const capabilities: string[] = Array.isArray(embedded)
@@ -86,7 +102,9 @@ export async function GET(request: NextRequest) {
     if (error) throw new HubError("INTERNAL", "Falha ao listar tools.", 500);
 
     return apiJson(
-      { tools: (data ?? []).map((r) => toToolDTO(r as Record<string, unknown>)) },
+      buildToolsListResponse(
+        (data ?? []).map((r) => toToolDTO(r as Record<string, unknown>)),
+      ),
       { requestId, headers: rl.headers },
     );
   } catch (err) {

@@ -8,6 +8,15 @@
  *
  * Nota: o proxy verifica APENAS a presença do cookie de sessão (barato).
  * A validação real do JWT acontece em lib/auth.ts dentro dos handlers.
+ *
+ * NOTA DE ESCOPO (27/10/2026): o matcher abaixo cobre SÓ caminhos
+ * literais /app/* — e nenhuma rota usa esse prefixo (os grupos de
+ * rota como (app) não produzem URLs /app). A proteção das páginas
+ * reais (/, /jobs, /catalog, …) vive em app/(app)/layout.tsx, que
+ * também respeita o modo de visualização temporário do Preview.
+ * NÃO alargar este matcher sem preservar esse modo: um redirect
+ * aqui correria antes do layout e mataria a visualização Preview
+ * sem sessão.
  */
 
 import { NextResponse } from "next/server";

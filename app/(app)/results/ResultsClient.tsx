@@ -96,7 +96,9 @@ export default function ResultsClient({ orgs }: { orgs: Org[] }) {
     // completed jobs. No global assets listing exists (honest, no invention).
     const [jobsBody, toolsBody] = await Promise.all([
       apiList<Job>(withOrg(`/jobs?status=COMPLETED&page=1&perPage=${RECENT_JOBS}`, orgId as string)),
-      apiGet<{ tools: Tool[] }>("/tools").catch(() => ({ tools: [] as Tool[] })),
+      apiGet<{ tools: Tool[] }>(withOrg("/tools", orgId as string)).catch(() => ({
+        tools: [] as Tool[],
+      })),
     ]);
     const toolNames = new Map((toolsBody.tools ?? []).map((t) => [t.id, t.name]));
     const settled = await Promise.all(

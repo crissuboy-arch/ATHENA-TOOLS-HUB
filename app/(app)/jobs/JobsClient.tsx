@@ -56,7 +56,7 @@ export default function JobsClient({ orgs }: { orgs: Org[] }) {
   // Tool catalog for the filter + resolving tool names (the job DTO has no name).
   useEffect(() => {
     if (!orgId) return;
-    apiGet<{ tools: Tool[] }>("/tools")
+    apiGet<{ tools: Tool[] }>(withOrg("/tools", orgId))
       .then((body) => setTools(body.tools ?? []))
       .catch(() => setTools([]));
   }, [orgId]);

@@ -10,6 +10,7 @@ import {
   ApiError,
   DB_NOT_CONFIGURED_MESSAGE,
   isDbNotConfigured,
+  withOrg,
 } from "@/lib/api-client";
 import {
   isToolOperational,
@@ -138,9 +139,14 @@ export default function NewJobClient({ orgs }: { orgs: Org[] }) {
   // "no selection" case is derived during render (effectiveDetail), and the
   // loading flag is raised by the selectTool event handler below.
   useEffect(() => {
-    if (!selectedToolId) return;
+    if (!selectedToolId || !orgId) return;
     let cancelled = false;
-    apiGet<{ tool: Tool }>(`/tools/${encodeURIComponent(selectedToolId)}`)
+    // Detalhe exige orgId (C1): sem ele, a sessão devolve 400 e o
+    // detalhe caía no fallback da lista — sem integrationStatus, o
+    // que fazia a página afirmar "Executor pendente" sempre.
+    apiGet<{ tool: Tool }>(
+      withOrg(`/tools/${encodeURIComponent(selectedToolId)}`, orgId),
+    )
       .then((body) => {
         if (!cancelled) setToolDetail(body.tool);
       })
@@ -153,7 +159,7 @@ export default function NewJobClient({ orgs }: { orgs: Org[] }) {
     return () => {
       cancelled = true;
     };
-  }, [selectedToolId, selectedTool]);
+  }, [selectedToolId, selectedTool, orgId]);
 
   // Derived: no selection → no detail (instead of setToolDetail(null) in an effect).
   const effectiveDetail = selectedToolId ? toolDetail : null;

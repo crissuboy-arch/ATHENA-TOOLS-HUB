@@ -62,7 +62,7 @@ export default function ApprovalsClient({ orgs }: { orgs: Org[] }) {
 
   useEffect(() => {
     if (!orgId) return;
-    apiGet<{ tools: Tool[] }>("/tools")
+    apiGet<{ tools: Tool[] }>(withOrg("/tools", orgId))
       .then((body) => setTools(body.tools ?? []))
       .catch(() => setTools([]));
   }, [orgId]);
