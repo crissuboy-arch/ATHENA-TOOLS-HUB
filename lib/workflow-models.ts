@@ -39,13 +39,15 @@ export type IntegrationStatus = "pending" | "ready";
 
 export interface Tool {
   id: string;
+  /** Slug estável (ex.: "photocraft"). Presente nas respostas v1; ausente em dados antigos. */
+  slug?: string;
   name: string;
   description: string | null;
   version: string;
   status: string;
   capabilities: string[];
   updatedAt: string;
-  /** Only present on the detail endpoint. 'ready' = real executor connected. */
+  /** 'ready' = real executor connected. Na lista v1 vem do slug; no detalhe, idem. */
   integrationStatus?: IntegrationStatus;
 }
 
@@ -67,6 +69,37 @@ export function toolStatusLabel(status: string): string {
 /** A tool can really execute only when a real executor is connected. */
 export function isToolOperational(tool: Tool): boolean {
   return tool.integrationStatus === "ready";
+}
+
+/**
+ * Gate honesto de criação de tarefa (função pura, testável).
+ * A criação só avança com ferramenta selecionada, detalhe carregado
+ * com sucesso e executor operacional confirmado. Qualquer outro caso
+ * bloqueia com um motivo explícito — nunca avança de modo enganoso
+ * nem trata "detalhe por confirmar" como "sem executor" (ou vice-versa).
+ */
+export type CreationGateReason =
+  | "no-selection"
+  | "detail-loading"
+  | "detail-error"
+  | "no-executor";
+
+export interface CreationGate {
+  allowed: boolean;
+  reason: CreationGateReason | null;
+}
+
+export function jobCreationGate(input: {
+  selected: boolean;
+  detailLoading: boolean;
+  detailError: boolean;
+  operational: boolean;
+}): CreationGate {
+  if (!input.selected) return { allowed: false, reason: "no-selection" };
+  if (input.detailLoading) return { allowed: false, reason: "detail-loading" };
+  if (input.detailError) return { allowed: false, reason: "detail-error" };
+  if (!input.operational) return { allowed: false, reason: "no-executor" };
+  return { allowed: true, reason: null };
 }
 
 export interface Job {

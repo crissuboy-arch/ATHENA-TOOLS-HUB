@@ -16,15 +16,27 @@ import { apiError, apiJson } from "@/lib/api-response";
 import { authenticate, requireScope, resolveOrgScope } from "@/lib/api-auth";
 import { checkRateLimit, rateLimitIdentity } from "@/lib/rate-limit";
 import { getSupabaseAdmin, isSupabaseConfigured } from "@/lib/auth";
+import {
+  integrationStatusFor,
+  type IntegrationStatus,
+} from "@/lib/jobs/service";
 
 export interface ToolDTO {
   id: string;
+  /** Slug estável (tools.slug, único por org) — a identidade que o registry de adapters entende. */
+  slug: string;
   name: string;
   description: string | null;
   version: string;
   status: string;
   capabilities: string[];
   updatedAt: string;
+  /**
+   * 'ready' só com executor real conectado. Calculado pelo SLUG (não pelo
+   * uuid): o registry de adapters é chaveado por slug, por isso calcular
+   * pelo uuid devolvia sempre 'pending' — mesmo com executor pronto.
+   */
+  integrationStatus: IntegrationStatus;
 }
 
 interface ToolCapabilityRow {
@@ -64,14 +76,18 @@ export function toToolDTO(row: Record<string, unknown>): ToolDTO {
         typeof c === "string" ? c : String(c.name ?? ""),
       ).filter(Boolean)
     : [];
+  const slug = String(row.slug ?? "");
   return {
     id: String(row.id),
+    slug,
     name: String(row.name),
     description: (row.description as string | null) ?? null,
     version: String(row.version ?? "0.0.0"),
     status: String(row.state ?? "unknown"),
     capabilities,
     updatedAt: String(row.updated_at),
+    // Fonte verdadeira do estado do executor: o slug, nunca o uuid.
+    integrationStatus: integrationStatusFor(slug),
   };
 }
 

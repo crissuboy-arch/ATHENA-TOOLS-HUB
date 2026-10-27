@@ -81,9 +81,13 @@ export async function GET(
     if (error) throw new HubError("INTERNAL", "Falha ao carregar a tool.", 500);
 
     if (data) {
+      // toToolDTO já calcula integrationStatus pelo slug da linha (a
+      // identidade que o registry entende). NÃO recalcular por dto.id:
+      // dto.id é o uuid, e adapterFor(uuid) devolve sempre undefined,
+      // o que prendia o detalhe em 'pending' mesmo com executor pronto.
       const dto = toToolDTO(data as Record<string, unknown>);
       return apiJson(
-        { tool: { ...dto, integrationStatus: integrationStatusFor(dto.id) } },
+        { tool: dto },
         { requestId, headers: rl.headers },
       );
     }

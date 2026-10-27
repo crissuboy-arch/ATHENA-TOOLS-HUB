@@ -88,7 +88,11 @@ export default function JobDetailClient({
       const toolsBody = await apiGet<{ tools: Tool[] }>(
         withOrg("/tools", orgId as string),
       );
-      toolName = (toolsBody.tools ?? []).find((t) => t.id === jobBody.job.toolId)?.name ?? null;
+      // toolId do job é o slug (legado: uuid) — casa por ambos.
+      toolName =
+        (toolsBody.tools ?? []).find(
+          (t) => t.id === jobBody.job.toolId || t.slug === jobBody.job.toolId,
+        )?.name ?? null;
     } catch {
       /* toolName stays null */
     }

@@ -15,6 +15,7 @@ import {
 import {
   isToolOperational,
   isUuid,
+  jobCreationGate,
   newIdempotencyKey,
   toolStatusLabel,
   type Job,
@@ -79,6 +80,8 @@ export default function NewJobClient({ orgs }: { orgs: Org[] }) {
   const [selectedToolId, setSelectedToolId] = useState("");
   const [toolDetail, setToolDetail] = useState<Tool | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [detailError, setDetailError] = useState<string | null>(null);
+  const [detailNonce, setDetailNonce] = useState(0);
 
   const [pairs, setPairs] = useState<Pair[]>([]);
   const [raw, setRaw] = useState("{}");
@@ -141,17 +144,28 @@ export default function NewJobClient({ orgs }: { orgs: Org[] }) {
   useEffect(() => {
     if (!selectedToolId || !orgId) return;
     let cancelled = false;
-    // Detalhe exige orgId (C1): sem ele, a sessão devolve 400 e o
-    // detalhe caía no fallback da lista — sem integrationStatus, o
-    // que fazia a página afirmar "Executor pendente" sempre.
+    // Detalhe exige orgId (C1): sem ele, a sessão devolve 400.
+    // Erro no detalhe NÃO cai em fallback silencioso: sem detalhe não há
+    // como confirmar o executor, por isso o gate bloqueia com erro
+    // explícito (nunca "sem executor" inventado nem "operacional" assumido).
     apiGet<{ tool: Tool }>(
       withOrg(`/tools/${encodeURIComponent(selectedToolId)}`, orgId),
     )
       .then((body) => {
-        if (!cancelled) setToolDetail(body.tool);
+        if (!cancelled) {
+          setToolDetail(body.tool);
+          setDetailError(null);
+        }
       })
-      .catch(() => {
-        if (!cancelled) setToolDetail(selectedTool ?? null);
+      .catch((err: unknown) => {
+        if (!cancelled) {
+          setToolDetail(null);
+          setDetailError(
+            err instanceof ApiError
+              ? err.message
+              : "Não foi possível confirmar se a ferramenta tem executor.",
+          );
+        }
       })
       .finally(() => {
         if (!cancelled) setDetailLoading(false);
@@ -159,16 +173,34 @@ export default function NewJobClient({ orgs }: { orgs: Org[] }) {
     return () => {
       cancelled = true;
     };
-  }, [selectedToolId, selectedTool, orgId]);
+  }, [selectedToolId, selectedTool, orgId, detailNonce]);
 
   // Derived: no selection → no detail (instead of setToolDetail(null) in an effect).
   const effectiveDetail = selectedToolId ? toolDetail : null;
   const operational = effectiveDetail ? isToolOperational(effectiveDetail) : false;
 
+  // Gate honesto: só avança com executor operacional confirmado. Sem
+  // executor, a página NÃO induz a criar uma tarefa que nunca executa.
+  const gate = jobCreationGate({
+    selected: selectedToolId !== "",
+    detailLoading,
+    detailError: detailError !== null,
+    operational,
+  });
+  const anyOperational =
+    tools?.some((t) => t.integrationStatus === "ready") ?? false;
+
   function selectTool(id: string) {
     setDetailLoading(true);
     setToolDetail(null);
+    setDetailError(null);
     setSelectedToolId(id);
+  }
+
+  function retryDetail() {
+    setDetailError(null);
+    setDetailLoading(true);
+    setDetailNonce((n) => n + 1);
   }
 
   /* ----- params editor ----- */
@@ -231,7 +263,6 @@ export default function NewJobClient({ orgs }: { orgs: Org[] }) {
     }
   }
 
-  const canNextStep1 = selectedToolId !== "" && !detailLoading;
   const canNextStep2 = rawError === null;
 
   if (!ready) return <LoadingState label="Carregando…" />;
@@ -246,7 +277,7 @@ export default function NewJobClient({ orgs }: { orgs: Org[] }) {
       />
 
       {/* step indicator */}
-      <ol className="mb-6 flex items-center gap-2" aria-label="Etapas">
+      <ol className="mb-6 flex flex-wrap items-center gap-2" aria-label="Etapas">
         {STEPS.map((label, i) => {
           const n = i + 1;
           const active = n === step;
@@ -325,6 +356,14 @@ export default function NewJobClient({ orgs }: { orgs: Org[] }) {
                       >
                         {toolStatusLabel(tool.status)}
                       </Badge>
+                      {/* Estado do executor (vem da lista v1, pelo slug). A
+                          ferramenta continua visível sem executor — mas
+                          ninguém a confunde com executável. */}
+                      {tool.integrationStatus === "ready" ? (
+                        <Badge tone="success">Executor conectado</Badge>
+                      ) : tool.integrationStatus === "pending" ? (
+                        <Badge tone="warning">Sem executor</Badge>
+                      ) : null}
                       <span className="font-mono text-[11px] text-ink-500">v{tool.version}</span>
                     </div>
                     <h3 className="font-semibold text-navy-900 [.dark_&]:text-white">{tool.name}</h3>
@@ -340,20 +379,45 @@ export default function NewJobClient({ orgs }: { orgs: Org[] }) {
             </div>
           )}
 
-          {selectedTool && !detailLoading && effectiveDetail && !operational ? (
+          {selectedTool && detailError ? (
             <div className="mt-4">
-              <Alert tone="warning" title="Executor pendente">
-                A ferramenta “{selectedTool.name}” ainda não tem um executor real conectado — a
-                tarefa será registrada, não executada.
+              <Alert tone="danger" title="Não foi possível confirmar o executor">
+                {detailError} Sem essa confirmação, a criação fica bloqueada — não
+                vale a pena avançar às cegas.
+              </Alert>
+              <div className="mt-3">
+                <Button tone="secondary" onClick={retryDetail}>
+                  Tentar novamente
+                </Button>
+              </div>
+            </div>
+          ) : null}
+
+          {selectedTool && gate.reason === "no-executor" ? (
+            <div className="mt-4">
+              <Alert tone="warning" title="Sem executor operacional">
+                A ferramenta “{selectedTool.name}” não tem um executor real conectado,
+                por isso não é possível criar uma tarefa executável para ela. A
+                ferramenta continua no catálogo, mas criar agora só registaria
+                uma tarefa que nunca seria executada.
+                {!anyOperational
+                  ? " Neste momento, nenhuma ferramenta do catálogo tem executor operacional."
+                  : " Escolhe uma ferramenta com o selo “Executor conectado”."}
               </Alert>
             </div>
           ) : null}
 
-          <div className="mt-6 flex justify-end gap-2">
-            <Link href="/jobs">
-              <Button tone="secondary">Cancelar</Button>
+          <div className="mt-6 flex flex-col gap-2 sm:flex-row sm:justify-end">
+            <Link href="/jobs" className="w-full sm:w-auto">
+              <Button tone="secondary" className="w-full sm:w-auto">
+                Cancelar
+              </Button>
             </Link>
-            <Button disabled={!canNextStep1} onClick={() => setStep(2)}>
+            <Button
+              disabled={!gate.allowed}
+              onClick={() => setStep(2)}
+              className="w-full sm:w-auto"
+            >
               Continuar →
             </Button>
           </div>
@@ -392,7 +456,7 @@ export default function NewJobClient({ orgs }: { orgs: Org[] }) {
                 ) : (
                   <div className="space-y-2">
                     {pairs.map((p, i) => (
-                      <div key={i} className="flex gap-2">
+                      <div key={i} className="flex flex-col gap-2 sm:flex-row">
                         <TextInput
                           placeholder="chave"
                           aria-label={`Chave ${i + 1}`}
@@ -417,6 +481,7 @@ export default function NewJobClient({ orgs }: { orgs: Org[] }) {
                           tone="secondary"
                           aria-label={`Remover parâmetro ${i + 1}`}
                           onClick={() => syncFromPairs(pairs.filter((_, j) => j !== i))}
+                          className="w-full sm:w-auto"
                         >
                           ×
                         </Button>
@@ -451,11 +516,19 @@ export default function NewJobClient({ orgs }: { orgs: Org[] }) {
             </div>
           </Card>
 
-          <div className="mt-6 flex justify-between gap-2">
-            <Button tone="secondary" onClick={() => setStep(1)}>
+          <div className="mt-6 flex flex-col gap-2 sm:flex-row sm:justify-between">
+            <Button
+              tone="secondary"
+              onClick={() => setStep(1)}
+              className="w-full sm:w-auto"
+            >
               ← Voltar
             </Button>
-            <Button disabled={!canNextStep2} onClick={() => setStep(3)}>
+            <Button
+              disabled={!canNextStep2}
+              onClick={() => setStep(3)}
+              className="w-full sm:w-auto"
+            >
               Revisar →
             </Button>
           </div>
@@ -510,11 +583,20 @@ export default function NewJobClient({ orgs }: { orgs: Org[] }) {
             </div>
           </Card>
 
-          {!operational ? (
+          {selectedTool && detailError ? (
             <div className="mb-4">
-              <Alert tone="warning" title="Executor pendente">
-                A tarefa será registrada, não executada, até a ferramenta ter um executor real
-                conectado.
+              <Alert tone="danger" title="Não foi possível confirmar o executor">
+                {detailError} Volta ao passo da ferramenta e tenta novamente.
+              </Alert>
+            </div>
+          ) : null}
+
+          {selectedTool && gate.reason === "no-executor" ? (
+            <div className="mb-4">
+              <Alert tone="warning" title="Sem executor operacional">
+                A ferramenta “{selectedTool.name}” não tem um executor real conectado.
+                A criação está bloqueada: uma tarefa criada agora ficaria apenas
+                registada, sem nunca ser executada.
               </Alert>
             </div>
           ) : null}
@@ -527,14 +609,19 @@ export default function NewJobClient({ orgs }: { orgs: Org[] }) {
             </div>
           ) : null}
 
-          <div className="flex justify-between gap-2">
-            <Button tone="secondary" onClick={() => setStep(2)}>
+          <div className="flex flex-col gap-2 sm:flex-row sm:justify-between">
+            <Button
+              tone="secondary"
+              onClick={() => setStep(2)}
+              className="w-full sm:w-auto"
+            >
               ← Voltar
             </Button>
             <Button
               tone="gold"
               onClick={submit}
-              disabled={submitting || !isUuid(idempotencyKey)}
+              disabled={submitting || !isUuid(idempotencyKey) || !gate.allowed}
+              className="w-full sm:w-auto"
             >
               {submitting ? "Criando…" : "Criar tarefa"}
             </Button>

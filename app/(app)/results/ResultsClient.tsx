@@ -100,7 +100,12 @@ export default function ResultsClient({ orgs }: { orgs: Org[] }) {
         tools: [] as Tool[],
       })),
     ]);
-    const toolNames = new Map((toolsBody.tools ?? []).map((t) => [t.id, t.name]));
+    // toolId do job é o slug (legado: uuid) — indexa por ambos.
+    const toolNames = new Map<string, string>();
+    for (const t of toolsBody.tools ?? []) {
+      toolNames.set(t.id, t.name);
+      if (t.slug) toolNames.set(t.slug, t.name);
+    }
     const settled = await Promise.all(
       jobsBody.items.map(async (job) => {
         try {

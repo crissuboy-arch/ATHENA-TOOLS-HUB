@@ -94,6 +94,52 @@ export function integrationStatusFor(toolId: string): IntegrationStatus {
   return adapter?.executionReady ? "ready" : "pending";
 }
 
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export interface ToolRowRef {
+  id: string;
+  slug: string;
+}
+
+/**
+ * Função pura (testável): linha resolvida → identidade canónica do job.
+ * Sem linha (tool desconhecida): preserva o input como slug, como antes.
+ */
+export function resolveJobToolIdentity(
+  inputToolId: string,
+  row: ToolRowRef | null,
+): { toolUuid: string | null; toolSlug: string } {
+  if (!row) return { toolUuid: null, toolSlug: inputToolId };
+  return { toolUuid: row.id, toolSlug: row.slug };
+}
+
+/**
+ * Resolve a linha da tool por uuid OU slug, dentro da org. A UI envia o
+ * uuid (tools.id); a intake usa o slug. Sem isto, adapterFor(uuid) era
+ * sempre undefined (validação do contrato saltada, tool_id NULL,
+ * tool_slug=uuid) e o worker nunca despacharia o job (no_adapter).
+ */
+async function findToolRow(
+  supabase: ReturnType<typeof getSupabaseAdmin>,
+  orgId: string,
+  inputToolId: string,
+): Promise<ToolRowRef | null> {
+  const columns: Array<"id" | "slug"> = UUID_RE.test(inputToolId)
+    ? ["id", "slug"]
+    : ["slug", "id"];
+  for (const col of columns) {
+    const { data, error } = await supabase
+      .from("tools")
+      .select("id, slug")
+      .eq("org_id", orgId)
+      .eq(col, inputToolId)
+      .maybeSingle();
+    if (!error && data) return data as ToolRowRef;
+  }
+  return null;
+}
+
 function toJobDTO(row: Record<string, unknown>): JobDTO {
   const toolSlug = String(row.tool_slug ?? "");
   const err = row.error as { message?: string } | null;
@@ -233,35 +279,34 @@ export async function createJob(
     return { job: toJobDTO(existing as Record<string, unknown>), created: false };
   }
 
+  // Identidade canónica: linha por uuid OU slug; o ADAPTER resolve-se
+  // sempre pelo slug (a chave do registry). Antes, a UI enviava uuid e
+  // adapterFor(uuid) falhava sempre — sem validação de contrato, sem
+  // tool_id e com tool_slug=uuid, o que condenava o job a nunca despachar.
+  const toolRow = await findToolRow(supabase, input.orgId, input.toolId);
+  const identity = resolveJobToolIdentity(input.toolId, toolRow);
+  const toolUuid = identity.toolUuid;
+
   // Validação contra o contrato da tool (quando há adapter registrado).
-  const adapter = toolRegistry.adapterFor(input.toolId);
+  const adapter = toolRegistry.adapterFor(identity.toolSlug);
   if (adapter) {
     const validation = adapter.validateParams(input.params);
     if (!validation.ok) {
       throw HubError.validation(
-        `Parâmetros inválidos para a tool "${input.toolId}".`,
+        `Parâmetros inválidos para a tool "${identity.toolSlug}".`,
         { errors: validation.errors },
       );
     }
   }
 
-  // Resolve o slug da tool para o uuid (tools.slug é único por org).
   // Tool desconhecida (ex.: ainda só no catálogo local): tool_id fica NULL,
   // tool_slug preserva a intenção — estado honesto, sem simulação.
-  const { data: toolRow } = await supabase
-    .from("tools")
-    .select("id")
-    .eq("org_id", input.orgId)
-    .eq("slug", input.toolId)
-    .maybeSingle();
-  const toolUuid = (toolRow as { id?: string } | null)?.id ?? null;
-
   const { data: inserted, error: insertError } = await supabase
     .from("execution_jobs")
     .insert({
       org_id: input.orgId,
       tool_id: toolUuid,
-      tool_slug: input.toolId,
+      tool_slug: identity.toolSlug,
       params: input.params,
       state: "CREATED",
       idempotency_key: input.idempotencyKey,
@@ -468,7 +513,20 @@ export async function listJobs(
     .select("*", { count: "exact" })
     .eq("org_id", filter.orgId);
   if (filter.status) query = query.eq("state", filter.status);
-  if (filter.toolId) query = query.eq("tool_slug", filter.toolId);
+  if (filter.toolId) {
+    // O filtro da UI envia o uuid; tool_slug guarda slugs (legado: uuid).
+    // Resolve uuid→slug e casa ambas as formas, para não perder jobs
+    // criados antes desta correção nem os novos.
+    const { data: rowById } = await supabase
+      .from("tools")
+      .select("slug")
+      .eq("org_id", filter.orgId)
+      .eq("id", filter.toolId)
+      .maybeSingle();
+    const slug = (rowById as { slug?: string } | null)?.slug;
+    const values = [...new Set(slug ? [slug, filter.toolId] : [filter.toolId])];
+    query = query.in("tool_slug", values);
+  }
 
   const from = (filter.page - 1) * filter.perPage;
   const to = from + filter.perPage - 1;

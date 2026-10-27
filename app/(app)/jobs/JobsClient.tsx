@@ -63,7 +63,11 @@ export default function JobsClient({ orgs }: { orgs: Org[] }) {
 
   const toolNames = useMemo(() => {
     const map = new Map<string, string>();
-    for (const t of tools) map.set(t.id, t.name);
+    // toolId do job é o slug (legado: uuid) — indexa por ambos.
+    for (const t of tools) {
+      map.set(t.id, t.name);
+      if (t.slug) map.set(t.slug, t.name);
+    }
     return map;
   }, [tools]);
 
