@@ -39,3 +39,8 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# MoneyPrinterTurbo isolated engine (never commit the real config)
+docker/moneyprinterturbo/config.toml
+docker/moneyprinterturbo/storage/
+docker/moneyprinterturbo/test-video-ptbr/output/

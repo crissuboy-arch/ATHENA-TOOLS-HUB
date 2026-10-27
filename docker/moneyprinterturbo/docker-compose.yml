@@ -1,0 +1,23 @@
+# MoneyPrinterTurbo — isolated engine (NOT a production deployment).
+#
+# Usage (on a host with Docker, authorized separately):
+#   cp config.example.toml config.toml   # set a real api_key first
+#   docker compose up -d --build api
+#
+# The API binds to 127.0.0.1 only. config.toml and storage/ are gitignored
+# and must never be committed. No ATHENA executor is registered by this file,
+# and no automatic posting to any social network is configured.
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: moneyprinterturbo-ATHENA-isolated
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - ./config.toml:/data/config.toml:ro
+      - ./storage:/data/storage
+    environment:
+      MPT_HOME: /data
+    restart: unless-stopped

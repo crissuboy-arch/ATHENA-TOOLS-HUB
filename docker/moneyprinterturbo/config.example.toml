@@ -1,0 +1,38 @@
+# MoneyPrinterTurbo — isolated engine config (EXAMPLE ONLY).
+#
+# Copy to config.toml (gitignored, never committed) and set a real api_key:
+#   cp config.example.toml config.toml
+# The api_key below is a placeholder, not a credential. Upstream reads the
+# key ONLY from config.toml (not from the environment), and an empty key
+# leaves the API unauthenticated — the ATHENA integration requires a key.
+#
+# This config is for an isolated, loopback-bound engine. It is NOT a
+# production deployment and does NOT register any ATHENA executor.
+
+log_level = "INFO"
+listen_host = "127.0.0.1"
+listen_port = 8080
+
+[app]
+# REQUIRED for the ATHENA integration: clients must send this same value
+# in the x-api-key header. Generate it locally; never commit config.toml.
+api_key = "TROCAR-POR-CHAVE-GERADA-LOCALMENTE"
+
+# Small isolated queue: 2 concurrent tasks, 20 queued (upstream defaults
+# are 5 and 100). A full queue answers HTTP 429; the adapter never retries.
+max_concurrent_tasks = 2
+max_queued_tasks = 20
+
+# Local materials only: no stock-provider key is needed for the PT-BR test.
+video_source = "local"
+
+# Subtitles from Edge TTS word boundaries (no Whisper model download).
+subtitle_provider = "edge"
+
+# Edge TTS request timeout (seconds); 0 disables the timeout.
+edge_tts_timeout = 30
+
+[ui]
+# PT-BR default voice for the isolated test (upstream-listed Edge voice).
+voice_name = "pt-BR-FranciscaNeural"
+subtitle_enabled = true
