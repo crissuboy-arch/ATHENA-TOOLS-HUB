@@ -32,19 +32,51 @@ export default function ResetPasswordPage() {
   const [error, setError] = React.useState<string | null>(null);
 
   React.useEffect(() => {
-    const check = async () => {
-      const supabase = getBrowserSupabase();
-      if (!supabase) {
-        setChecking(false);
-        return;
-      }
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-      setHasSession(Boolean(session));
+    const supabase = getBrowserSupabase();
+    if (!supabase) {
+      // Assíncrono de propósito: setState síncrono no corpo do
+      // efeito é rejeitado pelo lint (react-hooks/set-state-in-effect).
+      const timer0 = setTimeout(() => setChecking(false), 0);
+      return () => clearTimeout(timer0);
+    }
+    // A deteção da sessão de recuperação é assíncrona: ler a
+    // sessão uma única vez ao montar podia declarar o link
+    // inválido antes de a deteção terminar. Ouve os eventos e
+    // só declara ausência de sessão ao fim de 3 s sem ela.
+    let done = false;
+    const timer = setTimeout(() => {
+      if (done) return;
+      done = true;
+      setHasSession(false);
       setChecking(false);
+    }, 3000);
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((event, session) => {
+      if (done) return;
+      if (
+        session &&
+        (event === "SIGNED_IN" || event === "PASSWORD_RECOVERY")
+      ) {
+        done = true;
+        clearTimeout(timer);
+        setHasSession(true);
+        setChecking(false);
+      }
+    });
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (done) return;
+      if (session) {
+        done = true;
+        clearTimeout(timer);
+        setHasSession(true);
+        setChecking(false);
+      }
+    });
+    return () => {
+      clearTimeout(timer);
+      subscription.unsubscribe();
     };
-    check();
   }, []);
 
   const submit = async (e: React.FormEvent) => {

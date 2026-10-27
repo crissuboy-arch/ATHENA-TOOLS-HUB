@@ -20,12 +20,42 @@ export type AuthErrorKind =
   | "email-not-confirmed"
   | "email-rate-limited"
   | "token-expired"
+  | "browser-mismatch"
   | "unknown";
 
 interface AuthErrorLike {
   code?: string | null;
+  name?: string | null;
   message?: string | null;
   status?: number | null;
+}
+
+/**
+ * Classifica um erro da troca do código PKCE por sessão. O caso
+ * que importa distinguir: `pkce_code_verifier_not_found` — o
+ * verificador PKCE vive nos cookies da origem onde o link foi
+ * pedido (o @supabase/ssr guarda-o aí). Se o link aterrar noutra
+ * origem (fallback do Supabase para o Site URL, fora da allowlist)
+ * ou noutro navegador/aplicação (o caso típico no telemóvel:
+ * pedir no Chrome e abrir no browser interno do Gmail), o
+ * verificador não existe e a troca falha — mesmo com o link
+ * válido e dentro do prazo. Mostrar "link inválido" nesse caso
+ * esconde a causa real e leva a pedir links atrás de links.
+ * Detetado pelo código, pelo nome da classe ou pela mensagem.
+ */
+export function classifyExchangeError(
+  error: AuthErrorLike | null | undefined,
+): AuthErrorKind {
+  if (!error) return "unknown";
+  const hay = `${error.code ?? ""} ${error.name ?? ""} ${error.message ?? ""}`.toLowerCase();
+  if (
+    hay.includes("pkce_code_verifier_not_found") ||
+    hay.includes("authpkcecodeverifiermissingerror") ||
+    hay.includes("code verifier")
+  ) {
+    return "browser-mismatch";
+  }
+  return classifyAuthError(error);
 }
 
 /**

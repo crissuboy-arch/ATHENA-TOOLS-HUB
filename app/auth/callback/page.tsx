@@ -10,8 +10,13 @@ import { Alert } from "@/components/ui/Alert";
 import { Logo } from "@/components/layout/Logo";
 import { t } from "@/lib/i18n";
 import { getBrowserSupabase } from "@/lib/supabase-browser";
-import { resolveCallbackNext } from "@/lib/auth-redirects";
 import {
+  isRecoveryHash,
+  resolveCallbackNext,
+  resolvePostCallbackDestination,
+} from "@/lib/auth-redirects";
+import {
+  classifyExchangeError,
   classifyHashError,
   parseHashError,
 } from "@/lib/auth-errors";
@@ -32,7 +37,7 @@ function CallbackHandler() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [errorKind, setErrorKind] = React.useState<
-    "invalid" | "expired" | null
+    "invalid" | "expired" | "browser" | null
   >(null);
 
   React.useEffect(() => {
@@ -59,33 +64,77 @@ function CallbackHandler() {
     const code = searchParams.get("code");
     let done = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
-    const finish = (ok: boolean) => {
+    const finish = (ok: boolean, destination?: string) => {
       if (done) return;
       done = true;
       if (timer) clearTimeout(timer);
-      if (ok) router.replace(next);
+      if (ok) router.replace(destination ?? next);
       else setErrorKind("invalid");
     };
+    const fail = (kind: "invalid" | "expired" | "browser") => {
+      if (done) return;
+      done = true;
+      if (timer) clearTimeout(timer);
+      const timer0 = setTimeout(() => setErrorKind(kind), 0);
+      void timer0;
+    };
     // A deteção automática do fragmento (#access_token) é assíncrona:
-    // ouvir o evento SIGNED_IN evita declarar o link inválido por uma
+    // ouvir os eventos evita declarar o link inválido por uma
     // corrida entre a leitura da sessão e a deteção do fragmento.
+    // PASSWORD_RECOVERY tem de ser tratado à parte: a troca de um
+    // código de recuperação emite esse evento (não SIGNED_IN), e
+    // sem ele a sessão de recuperação caía no destino `next` — que,
+    // sem parâmetro (fallback para o Site URL), é /login, onde a
+    // pessoa tentava entrar com a senha antiga que esqueceu.
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((event, session) => {
-      if (event === "SIGNED_IN" && session) finish(true);
+      if (!session) return;
+      if (event === "PASSWORD_RECOVERY") finish(true, "/reset-password");
+      else if (event === "SIGNED_IN") finish(true, next);
     });
     const resolve = async () => {
       try {
         if (code) {
-          const { error: exchangeError } =
+          const { data, error: exchangeError } =
             await supabase.auth.exchangeCodeForSession(code);
-          finish(!exchangeError);
+          if (exchangeError) {
+            const kind = classifyExchangeError(exchangeError);
+            fail(
+              kind === "browser-mismatch"
+                ? "browser"
+                : kind === "token-expired"
+                  ? "expired"
+                  : "invalid",
+            );
+            return;
+          }
+          // O tipo do supabase-js não declara redirectType, mas o
+          // runtime devolve-o (ver _exchangeCodeForSession): acesso
+          // defensivo com cast, nunca assumido.
+          const redirectType = (
+            data as { redirectType?: string | null } | null
+          )?.redirectType;
+          finish(
+            true,
+            resolvePostCallbackDestination(
+              searchParams.get("next"),
+              redirectType,
+            ),
+          );
         } else {
           const {
             data: { session },
           } = await supabase.auth.getSession();
-          if (session) finish(true);
-          else timer = setTimeout(() => finish(false), 3000);
+          if (session) {
+            // Fluxo implícito: o tipo vem do fragmento, não do `next`.
+            finish(
+              true,
+              isRecoveryHash(window.location.hash)
+                ? "/reset-password"
+                : next,
+            );
+          } else timer = setTimeout(() => finish(false), 3000);
         }
       } catch {
         finish(false);
@@ -108,16 +157,20 @@ function CallbackHandler() {
             <Logo size={40} />
             <div>
               <h1 className="text-lg font-bold text-ink-900">
-                {errorKind === "expired"
-                  ? t.auth.resetLinkExpiredTitle
-                  : t.auth.resetLinkInvalidTitle}
+                {errorKind === "browser"
+                  ? t.auth.recoveryBrowserTitle
+                  : errorKind === "expired"
+                    ? t.auth.resetLinkExpiredTitle
+                    : t.auth.resetLinkInvalidTitle}
               </h1>
             </div>
           </div>
           <Alert variant="danger" className="mb-5">
-            {errorKind === "expired"
-              ? t.auth.resetLinkExpiredBody
-              : t.auth.resetLinkInvalidBody}
+            {errorKind === "browser"
+              ? t.auth.recoveryBrowserBody
+              : errorKind === "expired"
+                ? t.auth.resetLinkExpiredBody
+                : t.auth.resetLinkInvalidBody}
           </Alert>
           <Link href="/login">
             <Button variant="primary" className="w-full">

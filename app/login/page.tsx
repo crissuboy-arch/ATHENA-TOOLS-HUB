@@ -37,6 +37,7 @@ function LoginForm() {
   const [forgotSent, setForgotSent] = React.useState(false);
   const [forgotError, setForgotError] = React.useState<string | null>(null);
   const [forgotRateLimited, setForgotRateLimited] = React.useState(false);
+  const [recoveryStuck, setRecoveryStuck] = React.useState(false);
   const resetDone = searchParams.get("reset") === "success";
 
   // Verificação falhada que aterrou na tela de login: quando o
@@ -70,20 +71,37 @@ function LoginForm() {
     const supabase = getBrowserSupabase();
     if (!supabase) return;
     let done = false;
+    // Sem sessão ao fim de 3 s, o link não vai validar neste
+    // navegador (verificador PKCE noutra origem/aplicação, ou link
+    // já utilizado): antes, a tela ficava no formulário de login
+    // sem explicar nada — que é exatamente o sintoma reportado.
+    // O aviso diz o que fazer (novo link a partir deste endereço,
+    // aberto no mesmo navegador) em vez de deixar tentar a senha
+    // antiga, que é a que foi esquecida.
+    const stuckTimer = setTimeout(() => {
+      if (done) return;
+      const timer = setTimeout(() => setRecoveryStuck(true), 0);
+      void timer;
+    }, 3000);
     const go = () => {
       if (done) return;
       done = true;
+      clearTimeout(stuckTimer);
       router.replace("/reset-password");
     };
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === "SIGNED_IN" && session) go();
+      if (event === "PASSWORD_RECOVERY" && session) go();
     });
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session) go();
     });
-    return () => subscription.unsubscribe();
+    return () => {
+      clearTimeout(stuckTimer);
+      subscription.unsubscribe();
+    };
     // Corre uma única vez ao montar: o fragmento só existe no link.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -207,6 +225,12 @@ function LoginForm() {
         {error && mode === "login" && (
           <Alert variant="danger" className="mb-5">
             {error}
+          </Alert>
+        )}
+
+        {recoveryStuck && mode === "login" && (
+          <Alert variant="warning" className="mb-5">
+            {t.auth.recoveryStuckBody}
           </Alert>
         )}
 

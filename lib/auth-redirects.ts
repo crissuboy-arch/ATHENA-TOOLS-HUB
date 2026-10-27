@@ -26,6 +26,54 @@ export function resolveCallbackNext(next: string | null): string {
 }
 
 /**
+ * Destino após o callback, tendo em conta o tipo de link que o
+ * Supabase trocou. Uma sessão de recuperação (`redirectType`
+ * "recovery", ou o evento PASSWORD_RECOVERY) vai SEMPRE para
+ * `/reset-password` — mesmo quando o parâmetro `next` falta (caso
+ * do fallback para o Site URL, que perde o `next` original). Sem
+ * isto, a sessão de recuperação aterrava em `/login` e a pessoa
+ * tentava entrar com a senha antiga, que é precisamente a que
+ * esqueceu. Outros tipos seguem a allowlist de `next`.
+ */
+export function resolvePostCallbackDestination(
+  next: string | null,
+  redirectType: string | null | undefined,
+): string {
+  if (redirectType === "recovery") return "/reset-password";
+  return resolveCallbackNext(next);
+}
+
+/**
+ * Ação de resgate quando um link de autenticação aterra na raiz `/`
+ * em vez do callback — acontece quando o Supabase ignora o
+ * `redirectTo` (URL fora da allowlist) e volta para o Site URL
+ * (origem nua). A landing é um componente de servidor sem cliente
+ * Supabase: sem resgate, o código/fragmento perdia-se ao clicar
+ * em "Entrar" e a pessoa ficava no login sem sessão.
+ *
+ * - Fragmento de recuperação (`#access_token…&type=recovery`) →
+ *   "wait-session": esperar pela sessão e só então ir para
+ *   `/reset-password` (nunca deitar fora o fragmento).
+ * - `?code=` (PKCE) → "forward-callback": reencaminhar a query
+ *   intacta para `/auth/callback`, que troca o código e encaminha
+ *   por `redirectType` (recuperação → `/reset-password`).
+ * - Qualquer outro caso (incluindo outras páginas) → null.
+ */
+export type RootRecoveryAction = "wait-session" | "forward-callback";
+
+export function getRootRecoveryAction(
+  pathname: string,
+  search: string,
+  hash: string,
+): RootRecoveryAction | null {
+  if (pathname !== "/") return null;
+  if (isRecoveryHash(hash)) return "wait-session";
+  const params = new URLSearchParams(search);
+  if (params.get("code")) return "forward-callback";
+  return null;
+}
+
+/**
  * URL para onde o link de recuperação de senha deve voltar:
  * o callback, que troca o código pela sessão e segue para
  * `/reset-password`. A origem vem do deployment onde o utilizador

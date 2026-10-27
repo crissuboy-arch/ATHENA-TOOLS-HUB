@@ -7,6 +7,7 @@
 import { describe, expect, it } from "vitest";
 import {
   classifyAuthError,
+  classifyExchangeError,
   classifyHashError,
   parseHashError,
 } from "@/lib/auth-errors";
@@ -76,5 +77,45 @@ describe("parseHashError / classifyHashError", () => {
     expect(parseHashError("")).toBeNull();
     expect(parseHashError("#access_token=abc&type=recovery")).toBeNull();
     expect(classifyHashError(null)).toBe("unknown");
+  });
+});
+
+describe("classifyExchangeError", () => {
+  it("verificador PKCE em falta distingue-se do link inválido", () => {
+    // Código real do @supabase/auth-js (AuthPKCECodeVerifierMissingError).
+    expect(
+      classifyExchangeError({
+        code: "pkce_code_verifier_not_found",
+        message: "PKCE code verifier not found",
+        status: 400,
+      }),
+    ).toBe("browser-mismatch");
+    expect(
+      classifyExchangeError({
+        name: "AuthPKCECodeVerifierMissingError",
+        message: "PKCE code verifier not found",
+        status: 400,
+      }),
+    ).toBe("browser-mismatch");
+    expect(
+      classifyExchangeError({
+        message: "code verifier missing for PKCE exchange",
+        status: 400,
+      }),
+    ).toBe("browser-mismatch");
+  });
+
+  it("outros erros da troca seguem a classificação geral", () => {
+    expect(
+      classifyExchangeError({
+        code: "otp_expired",
+        message: "Token has expired",
+        status: 400,
+      }),
+    ).toBe("token-expired");
+    expect(classifyExchangeError(null)).toBe("unknown");
+    expect(
+      classifyExchangeError({ message: "something else", status: 400 }),
+    ).toBe("unknown");
   });
 });

@@ -83,6 +83,11 @@ export const t = {
     resetLinkInvalidTitle: "Link inválido ou expirado",
     resetLinkInvalidBody:
       "Este link de recuperação já não é válido. Pede um novo link na tela de login, em “Esqueceu a senha?”.",
+    recoveryBrowserTitle: "Este link não funciona neste navegador ou endereço",
+    recoveryBrowserBody:
+      "Este link de recuperação só funciona no mesmo navegador e no mesmo endereço onde foi pedido — o código de verificação fica guardado aí. Pede um novo link a partir deste endereço, em “Esqueceu a senha?”, e abre-o no mesmo navegador, sem trocar de aplicação ou de endereço. Cada link só vale uma vez.",
+    recoveryStuckBody:
+      "Este link de recuperação não foi validado neste navegador. Pede um novo link a partir deste endereço, em “Esqueceu a senha?”, e abre-o no mesmo navegador onde o pediste.",
     requestNewLink: "Pedir novo link",
     saving: "A guardar…",
     sending: "A enviar…",
