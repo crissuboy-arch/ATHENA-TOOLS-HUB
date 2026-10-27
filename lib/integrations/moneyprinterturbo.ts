@@ -17,7 +17,7 @@ export type VideoRequest = {
   [key: string]: unknown;
 };
 
-export type MptEnvelope<T> = { code: number; message?: string; data: T };
+export type MptEnvelope<T> = { status: number; message?: string; data: T };
 export type MptTask = { task_id: string; [key: string]: unknown };
 
 function getConfig() {
@@ -52,7 +52,7 @@ async function callMpt<T>(path: string, method: "GET" | "POST", body?: unknown):
     throw new Error(`MoneyPrinterTurbo HTTP ${response.status}`);
   }
   const result = (await response.json()) as MptEnvelope<T>;
-  if (result.code !== 200 || result.data == null) {
+  if (result.status !== 200 || result.data == null) {
     throw new Error("MoneyPrinterTurbo rejeitou a operação.");
   }
   return result.data;
