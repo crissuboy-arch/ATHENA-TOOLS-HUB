@@ -1,0 +1,95 @@
+{
+  "schema": "athena.campaign.proposal.v1",
+  "campaignId": "VP-AGUEDA-2026-PRELAUNCH",
+  "name": "ÁGUEDA ESTÁ NA VITRINE",
+  "product": "VitrinePro",
+  "targetUrl": "https://vitrinepro.digital",
+  "status": "draft_requires_approval",
+  "territory": {
+    "pilot": "Águeda, Portugal",
+    "expansion": "Aveiro, Portugal"
+  },
+  "mode": "no_publish_no_spend",
+  "orgId": null,
+  "tasks": [
+    {
+      "id": "VP-01",
+      "name": "Pesquisa local Águeda",
+      "status": "proposed",
+      "requires": [
+        "reliable_sources",
+        "human_review"
+      ]
+    },
+    {
+      "id": "VP-02",
+      "name": "Auditoria landing e recursos ativos",
+      "status": "proposed",
+      "requires": [
+        "real_prod_verification"
+      ]
+    },
+    {
+      "id": "VP-03",
+      "name": "Copy e textos de anúncios",
+      "status": "draft_delivered",
+      "requires": [
+        "human_approval"
+      ]
+    },
+    {
+      "id": "VP-04",
+      "name": "Criativos estáticos e carrossel",
+      "status": "proposed",
+      "requires": [
+        "brand_assets",
+        "human_approval"
+      ]
+    },
+    {
+      "id": "VP-05",
+      "name": "Vídeos verticais MKVideos",
+      "status": "proposed",
+      "requires": [
+        "mkvideos_readiness",
+        "authorized_cost",
+        "human_approval"
+      ]
+    },
+    {
+      "id": "VP-06",
+      "name": "Distribuição orgânica",
+      "status": "proposed",
+      "requires": [
+        "approved_assets",
+        "explicit_publication_approval"
+      ]
+    },
+    {
+      "id": "VP-07",
+      "name": "UTMs e métricas reais",
+      "status": "proposed",
+      "requires": [
+        "site_tracking_qa",
+        "privacy_review"
+      ]
+    },
+    {
+      "id": "VP-08",
+      "name": "Relatório do piloto",
+      "status": "proposed",
+      "requires": [
+        "actual_metrics"
+      ]
+    }
+  ],
+  "guardrails": {
+    "paidSpendAllowed": false,
+    "autoPublishAllowed": false,
+    "contactOutreachAllowed": false,
+    "claimMapReady": false,
+    "requireProofOfCompletion": true
+  },
+  "documentation": "campaigns/vitrinepro/2026-prelancamento-agueda.md",
+  "note": "Proposal only: no ATHENA API jobs submitted. Requires validated user session, org and G3 tool permissions."
+}
