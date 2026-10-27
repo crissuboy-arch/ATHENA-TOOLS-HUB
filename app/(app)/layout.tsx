@@ -1,4 +1,6 @@
 import { redirect } from "next/navigation";
+import { connection } from "next/server";
+import { Suspense } from "react";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { Topbar } from "@/components/layout/Topbar";
 import { MobileNav } from "@/components/layout/MobileNav";
@@ -41,11 +43,17 @@ async function getSessionUser(): Promise<SessionUser | null> {
   }
 }
 
-export default async function AppLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default function AppLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-mist" aria-busy="true" />}>
+      <AuthenticatedAppLayout>{children}</AuthenticatedAppLayout>
+    </Suspense>
+  );
+}
+
+async function AuthenticatedAppLayout({ children }: { children: React.ReactNode }) {
+  // Supabase SSR can read time while recovering session; this must happen at request time.
+  await connection();
   const user = await getSessionUser();
   // Modo visualização temporário (só Preview, sem sessão): permite
   // VER o painel sem entrar. Sem registar o redirecionador de 401,
