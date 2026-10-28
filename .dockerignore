@@ -1,0 +1,6 @@
+node_modules
+.next
+.git
+coverage
+*.log
+docs/GO_LIVE_CHECKLIST.md
