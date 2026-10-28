@@ -43,21 +43,37 @@ MKVideos. Nada a configurar no Hub até lá.
 - **O que é:** renderização determinística de composições HTML/CSS/animação
   → MP4 (headless Chromium via puppeteer-core + FFmpeg). NÃO gera avatares
   de IA — o adapter nunca anuncia isso.
-- **Requisitos (documentados):** Node.js ≥ 22, FFmpeg, Chromium headless.
-- **Contrato real do CLI** (https://hyperframes.heygen.com/packages/cli):
-  `init` → `lint` → `check` → `render --output final.mp4
-  [--quality draft|looks|delivery] [--docker]`; escala via
-  `lambda render` / `cloudrun render` / `cloud render`.
+- **Requisitos (documentados):** Node.js ≥ 22, FFmpeg + ffprobe, Chromium headless.
+- **Contrato real do CLI 0.6.80** (provado contra o pacote instalado em
+  2026-10-28 — NÃO contra docs mais recentes):
+  `lint . --json` → `render . --output final.mp4
+  --quality draft|standard|high --resolution portrait|square|landscape
+  --workers 1 [--variables '<json>'] [--docker]`; escala via
+  `lambda render` / `cloudrun render` / `cloud render` (fora do executor v1).
+  NÃO existe `check` na 0.6.80; `render` NÃO tem `--json`; `--docker` é
+  false por omissão.
 - **Versão pinada:** `0.6.80` por defeito (variável `HYPERFRAMES_VERSION`) —
   mesma versão endurecida no MKVideos; não subir sem render de validação.
 - O adapter expõe `buildRenderJobSpec()` — especificação pura do job para o
-  worker isolado (sequência lint → check → render, `--json`, update checks
-  desligados). `execute()` lança 501 até o worker existir.
+  worker isolado (sequência lint → render, update checks e telemetria
+  desligados). Desde a versão `0.3.0-worker`, `execute()` é REAL
+  (lib/adapters/hyperframes-executor.ts): lint → render → verificação por
+  ffprobe → artefacto copiado para `HYPERFRAMES_ARTIFACTS_DIR/<jobId>/`.
+- **Gate:** `executionReady` só é true com `HYPERFRAMES_WORKER_ENABLED=1`
+  no ambiente DO WORKER (nunca na Vercel). Primeira execução real provada
+  em 2026-10-28 (harness `scripts/demo-first-execution.ts`, job
+  `job-demo-hf-001`: QUEUED → RUNNING → COMPLETED, MP4 1080×1920, 3 s,
+  ffprobe OK) — ver `research_notes/athena-g3-final/primeira-execucao.md`.
+- **Browser:** usar Chrome for Testing (ex.: chromium-1248 do Playwright,
+  156.0.8078.4). O Chromium 152 do sistema BLOQUEIA a navegação loopback
+  do CLI (`ERR_BLOCKED_BY_LOCAL_NETWORK_ACCESS_CHECKS`) e não há flag que
+  resolva — ver o relatório da primeira execução.
 
-**Notas honestas:** telemetria anónima vem ligada por defeito no CLI —
-opt-out a confirmar na versão instalada (NÃO VERIFICADO); dependências com
-licenças próprias no caminho Lambda (`ffmpeg-static` GPL-3.0 no artefacto,
-`mediabunny` MPL-2.0) — ver CREDITS.md do repo antes de redistribuir.
+**Notas honestas:** telemetria desligada no worker via
+`HYPERFRAMES_NO_TELEMETRY=1` (variável suportada pelo CLI 0.6.80);
+dependências com licenças próprias no caminho Lambda (`ffmpeg-static`
+GPL-3.0 no artefacto, `mediabunny` MPL-2.0) — ver CREDITS.md do repo
+antes de redistribuir.
 
 ## C. VectorCraft (`vectorcraft`) — vector.generate
 

@@ -1,13 +1,14 @@
 /**
- * Athena Tools Hub — adapter HyperFrames (honestidade + contrato real).
+ * Athena Tools Hub — adapter HyperFrames (contrato real + executor ligado).
  *
  * Regras duras: o adapter NUNCA simula sucesso de execução e NUNCA anuncia
- * geração de avatares de IA como capacidade nativa. `execute()` lança
- * NOT_IMPLEMENTED (501); o render real é desenhado para worker isolado via
- * `buildRenderJobSpec()` (contrato confirmado do CLI: lint → check →
- * render). Sem rede, sem Supabase.
+ * geração de avatares de IA como capacidade nativa. `execute()` corre o
+ * render real (lint → render → ffprobe) via import dinâmico do executor;
+ * sem pré-requisitos, falha com erro real. O contrato aqui provado é o do
+ * CLI 0.6.80: lint → render (NÃO existe `check`), quality
+ * draft|standard|high, docker false por omissão. Sem rede, sem Supabase.
  */
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, afterEach } from "vitest";
 import { HubError } from "../errors";
 import { toolRegistry } from "./index";
 import {
@@ -25,25 +26,65 @@ const validParams = {
   durationSeconds: 15,
 };
 
-describe("HyperFramesAdapter.execute — honestidade", () => {
-  it("execute() LANÇA NOT_IMPLEMENTED (501), nunca simula sucesso", async () => {
-    try {
-      await adapter.execute();
-      expect.unreachable("deveria ter lançado");
-    } catch (err) {
-      expect(err).toBeInstanceOf(HubError);
-      const hub = err as HubError;
-      expect(hub.code).toBe("NOT_IMPLEMENTED");
-      expect(hub.status).toBe(501);
-    }
+/** Restaura o env manipulado por cada teste de gate. */
+const savedWorkerEnabled = process.env["HYPERFRAMES_WORKER_ENABLED"];
+const savedCli = process.env["HYPERFRAMES_CLI"];
+afterEach(() => {
+  if (savedWorkerEnabled === undefined) delete process.env["HYPERFRAMES_WORKER_ENABLED"];
+  else process.env["HYPERFRAMES_WORKER_ENABLED"] = savedWorkerEnabled;
+  if (savedCli === undefined) delete process.env["HYPERFRAMES_CLI"];
+  else process.env["HYPERFRAMES_CLI"] = savedCli;
+});
+
+describe("HyperFramesAdapter.execute — execução real, sem simulação", () => {
+  it("execute() com params inválidos LANÇA erro de validação (nunca simula)", async () => {
+    await expect(
+      adapter.execute({
+        jobId: "job-test",
+        orgId: "org-test",
+        toolId: "hyperframes",
+        params: { format: "9:16" },
+        missionId: null,
+        attempt: 1,
+        maxAttempts: 1,
+        signal: new AbortController().signal,
+        reportProgress: async () => {},
+      }),
+    ).rejects.toBeInstanceOf(HubError);
   });
 
-  it("executionReady é false — nenhum worker de renderização conectado", () => {
-    expect(adapter.executionReady).toBe(false);
+  it("execute() sem CLI configurado FALHA com erro real (nunca sucesso falso)", async () => {
+    process.env["HYPERFRAMES_CLI"] = "/definitivamente/inexistente/cli.js";
+    await expect(
+      adapter.execute({
+        jobId: "job-test",
+        orgId: "org-test",
+        toolId: "hyperframes",
+        params: validParams,
+        missionId: null,
+        attempt: 1,
+        maxAttempts: 1,
+        signal: new AbortController().signal,
+        reportProgress: async () => {},
+      }),
+    ).rejects.toThrow(/HYPERFRAMES_CLI/);
+  });
+
+  it("executionReady é false sem HYPERFRAMES_WORKER_ENABLED=1", () => {
+    delete process.env["HYPERFRAMES_WORKER_ENABLED"];
+    expect(new HyperFramesAdapter().executionReady).toBe(false);
+  });
+
+  it("executionReady é true SÓ com HYPERFRAMES_WORKER_ENABLED=1 (opt-in do worker)", () => {
+    process.env["HYPERFRAMES_WORKER_ENABLED"] = "1";
+    expect(new HyperFramesAdapter().executionReady).toBe(true);
+    process.env["HYPERFRAMES_WORKER_ENABLED"] = "0";
+    expect(new HyperFramesAdapter().executionReady).toBe(false);
   });
 
   it("id, version e capabilities do contrato (sem avatares de IA)", () => {
     expect(adapter.id).toBe("hyperframes");
+    expect(adapter.version).toBe("0.3.0-worker");
     expect(adapter.capabilities).toContain("video.render");
     expect(adapter.capabilities.join(" ")).not.toMatch(/avatar/i);
   });
@@ -59,11 +100,9 @@ describe("HyperFramesAdapter.validateParams (contrato real)", () => {
     expect(r.ok).toBe(true);
   });
 
-  it("aplica defaults (formato 9:16, quality delivery)", () => {
-    const r = adapter.validateParams({
-      composition: { html: "<div>x</div>" },
-    });
-    expect(r.ok).toBe(true);
+  it("aplica defaults (formato 9:16, quality standard)", () => {
+    const spec = buildRenderJobSpec({ composition: { html: "<div>x</div>" } });
+    expect(spec.commands[1]!.args).toContain("standard");
   });
 
   it("rejeita formato inválido", () => {
@@ -79,31 +118,45 @@ describe("HyperFramesAdapter.validateParams (contrato real)", () => {
     expect(r.ok).toBe(false);
   });
 
-  it("rejeita quality inválida", () => {
-    const r = adapter.validateParams({
-      composition: { html: "<div>x</div>" },
-      quality: "cinema",
-    });
-    expect(r.ok).toBe(false);
+  it("rejeita quality inválida — incluindo os valores antigos looks/delivery", () => {
+    for (const quality of ["cinema", "looks", "delivery"]) {
+      const r = adapter.validateParams({
+        composition: { html: "<div>x</div>" },
+        quality,
+      });
+      expect(r.ok).toBe(false);
+    }
+  });
+
+  it("aceita quality draft|standard|high", () => {
+    for (const quality of ["draft", "standard", "high"]) {
+      expect(
+        adapter.validateParams({ composition: { html: "<div>x</div>" }, quality }).ok,
+      ).toBe(true);
+    }
   });
 });
 
 describe("buildRenderJobSpec — contrato do worker isolado", () => {
-  it("monta a sequência lint → check → render do CLI real", () => {
+  it("monta a sequência lint → render do CLI real 0.6.80 (sem check)", () => {
     const spec = buildRenderJobSpec(validParams, "0.6.80");
     expect(spec.mustRunOn).toBe("isolated-worker");
-    expect(spec.runner).toBe("npx");
+    expect(spec.runner).toBe("hyperframes-cli");
     expect(spec.package).toBe("hyperframes@0.6.80");
-    expect(spec.commands.map((c) => c.cmd)).toEqual(["lint", "check", "render"]);
-    const render = spec.commands[2]!;
+    expect(spec.commands.map((c) => c.cmd)).toEqual(["lint", "render"]);
+    const render = spec.commands[1]!;
     expect(render.args).toContain("--output");
     expect(render.args).toContain("final.mp4");
-    expect(render.args).toContain("--docker");
+    expect(render.args).toContain("--resolution");
+    expect(render.args).toContain("portrait");
+    expect(render.args).toContain("--workers");
+    expect(render.args).not.toContain("--docker");
+    expect(render.args).not.toContain("--json");
   });
 
-  it("sem docker: omite a flag --docker", () => {
-    const spec = buildRenderJobSpec({ ...validParams, docker: false });
-    expect(spec.commands[2]!.args).not.toContain("--docker");
+  it("com docker: true inclui a flag --docker (e exige docker no worker)", () => {
+    const spec = buildRenderJobSpec({ ...validParams, docker: true });
+    expect(spec.commands[1]!.args).toContain("--docker");
   });
 
   it("mapeia formato → preset de resolução documentado", () => {
@@ -138,7 +191,11 @@ describe("resolveHyperFramesVersion", () => {
 });
 
 describe("HyperFramesAdapter.dryRunInfo — honestidade", () => {
-  it("exige aprovação (renderização externa pode gerar custo)", () => {
+  it("exige aprovação (renderização externa pode gerar custo de infra)", () => {
     expect(adapter.dryRunInfo().requiresApproval).toBe(true);
+  });
+
+  it("não declara custo: executor v1 é só render local $0 (nunca cloud)", () => {
+    expect(adapter.dryRunInfo().estimatedCost).toBeUndefined();
   });
 });

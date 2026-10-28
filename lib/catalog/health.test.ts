@@ -171,7 +171,9 @@ describe("resolveToolState / getToolHealth — retrato honesto de hoje", () => {
   });
 
   it("nenhuma ferramenta com adapter 501 pode ser READY", () => {
-    for (const id of ["vectorcraft", "hyperframes", "apify-mcp"]) {
+    // HyperFrames SAIU deste grupo em 2026-10-28 (executor real 0.3.0-worker,
+    // primeira execução provada) — restam os 501 puros.
+    for (const id of ["vectorcraft", "apify-mcp"]) {
       const h = getToolHealth(id, {
         configured: true,
         lastRealRunOk: true,
@@ -184,9 +186,9 @@ describe("resolveToolState / getToolHealth — retrato honesto de hoje", () => {
 
   it("adapters 501 expõem a versão do contrato, sem fingir executor", () => {
     // Versões pinadas pela FASE 6 (contratos estendidos); mkvideos nasce em 0.1.0.
+    // HyperFrames NÃO está aqui: tem executor real desde 0.3.0-worker.
     const expected: Record<string, string> = {
       vectorcraft: "0.2.0-contract",
-      hyperframes: "0.2.0-contract",
       "apify-mcp": "0.2.0-contract",
       mkvideos: "0.1.0-contract",
     };
@@ -195,6 +197,24 @@ describe("resolveToolState / getToolHealth — retrato honesto de hoje", () => {
       expect(h.contractVersion).toBe(version);
       expect(h.signals?.adapterRegistered).toBe(true);
       expect(h.signals?.executionReady).toBe(false);
+    }
+  });
+
+  it("hyperframes 0.3.0-worker: executor real, gate por env (nunca fingido)", () => {
+    const saved = process.env["HYPERFRAMES_WORKER_ENABLED"];
+    try {
+      delete process.env["HYPERFRAMES_WORKER_ENABLED"];
+      const off = getToolHealth("hyperframes");
+      expect(off.contractVersion).toBe("0.3.0-worker");
+      expect(off.signals?.adapterRegistered).toBe(true);
+      expect(off.signals?.executionReady).toBe(false);
+      process.env["HYPERFRAMES_WORKER_ENABLED"] = "1";
+      const on = getToolHealth("hyperframes");
+      expect(on.contractVersion).toBe("0.3.0-worker");
+      expect(on.signals?.executionReady).toBe(true);
+    } finally {
+      if (saved === undefined) delete process.env["HYPERFRAMES_WORKER_ENABLED"];
+      else process.env["HYPERFRAMES_WORKER_ENABLED"] = saved;
     }
   });
 
